@@ -31,11 +31,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Actions
 
     @objc func startScreenshot() {
-        // 短暂延迟让菜单收起再展示 overlay
+        // 短暂延迟让菜单收起，再截图并展示自定义选区 overlay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            SelectionOverlay.show { image in
-                guard let image else { return }
-                PinWindowController.create(image: image)
+            Task {
+                guard let screen = NSScreen.main,
+                      let fullImage = try? await ScreenCaptureManager.captureFullScreen(screen) else { return }
+                AdjustmentOverlayController.show(fullImage: fullImage, initialRect: nil, screen: screen)
             }
         }
     }

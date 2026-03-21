@@ -9,228 +9,10 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - SelectionOverlay entry point
+// MARK: - (SelectionOverlay removed — capture-first flow uses AdjustmentOverlayController directly)
 
-@MainActor
-enum SelectionOverlay {
-
-    static func show(completion: @escaping @MainActor (NSImage?) -> Void) {
-        // Cover every screen with one panel per display
-        let controllers = NSScreen.screens.map {
-            SelectionOverlayController(screen: $0, completion: completion)
-        }
-        // Retain controllers until dismissed
-        SelectionOverlayController.active = controllers
-        controllers.forEach { $0.show() }
-    }
-}
-
-// MARK: - Controller (one per screen)
-
-@MainActor
-final class SelectionOverlayController {
-
-    // Retain all active controllers across all screens
-    static var active: [SelectionOverlayController] = []
-
-    private let screen: NSScreen
-    private let panel: NSPanel
-    private let overlayView: SelectionOverlayView
-    private let completion: @MainActor (NSImage?) -> Void
-
-    init(screen: NSScreen, completion: @escaping @MainActor (NSImage?) -> Void) {
-        self.screen = screen
-        self.completion = completion
-
-        panel = NSPanel(
-            contentRect: screen.frame,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false,
-            screen: screen
-        )
-        panel.level = .screenSaver
-        panel.isOpaque = false
-        panel.backgroundColor = NSColor.black.withAlphaComponent(0.25)
-        panel.hasShadow = false
-        panel.ignoresMouseEvents = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-
-        overlayView = SelectionOverlayView(frame: screen.frame)
-        panel.contentView = overlayView
-    }
-
-    func show() {
-        overlayView.onSelectionComplete = { [weak self] rect in
-            self?.handleSelection(rect)
-        }
-        overlayView.onCancel = { [weak self] in
-            self?.dismissAll(result: nil)
-        }
-        panel.makeKeyAndOrderFront(nil)
-        NSCursor.crosshair.push()
-    }
-
-    private func handleSelection(_ rect: CGRect) {
-        NSCursor.pop()
-        let captureScreen = screen
-        let captureCompletion = completion
-        dismissAll(result: nil)
-        Task {
-            guard let fullImage = try? await ScreenCaptureManager.captureFullScreen(captureScreen) else {
-                captureCompletion(nil)
-                return
-            }
-            AdjustmentOverlayController.show(
-                fullImage: fullImage,
-                initialRect: rect,
-                screen: captureScreen
-            )
-        }
-    }
-
-    private func dismissAll(result: NSImage?) {
-        NSCursor.pop()
-        for ctrl in SelectionOverlayController.active {
-            ctrl.panel.orderOut(nil)
-        }
-        SelectionOverlayController.active = []
-        if let result {
-            completion(result)
-        }
-    }
-}
-
-// MARK: - Overlay NSView
-
-final class SelectionOverlayView: NSView {
-
-    var onSelectionComplete: ((CGRect) -> Void)?
-    var onCancel: (() -> Void)?
-
-    private var startPoint: CGPoint = .zero
-    private var currentRect: CGRect = .zero
-    private var isDragging = false
-
-    override var isFlipped: Bool { false }
-    override var acceptsFirstResponder: Bool { true }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        window?.makeFirstResponder(self)
-    }
-
-    // MARK: Mouse
-
-    override func mouseDown(with event: NSEvent) {
-        startPoint = convert(event.locationInWindow, from: nil)
-        currentRect = CGRect(origin: startPoint, size: .zero)
-        isDragging = true
-        needsDisplay = true
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        let current = convert(event.locationInWindow, from: nil)
-        currentRect = rectFrom(startPoint, to: current)
-        needsDisplay = true
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        isDragging = false
-        let current = convert(event.locationInWindow, from: nil)
-        let finalRect = rectFrom(startPoint, to: current)
-
-        guard finalRect.width > 4, finalRect.height > 4 else {
-            // Too small — cancel
-            onCancel?()
-            return
-        }
-
-        // Convert from view-local (flipped=false) to screen coordinates
-        let screenRect = window.map { win in
-            win.convertToScreen(convert(finalRect, to: nil))
-        } ?? finalRect
-
-        onSelectionComplete?(screenRect)
-    }
-
-    override func keyDown(with event: NSEvent) {
-        // Escape cancels
-        if event.keyCode == 53 {
-            onCancel?()
-        }
-    }
-
-    // MARK: Drawing
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard isDragging, currentRect.width > 1, currentRect.height > 1 else { return }
-
-        // Dim everything outside selection
-        let dimColor = NSColor.black.withAlphaComponent(0.35)
-        dimColor.setFill()
-
-        let path = NSBezierPath(rect: bounds)
-        path.append(NSBezierPath(rect: currentRect).reversed)
-        path.fill()
-
-        // Selection border
-        NSColor.white.withAlphaComponent(0.9).setStroke()
-        let border = NSBezierPath(rect: currentRect)
-        border.lineWidth = 1.5
-        border.stroke()
-
-        // Size label
-        let scale = window?.backingScaleFactor ?? 2
-        let w = Int(currentRect.width * scale)
-        let h = Int(currentRect.height * scale)
-        let label = "\(w) × \(h)"
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: NSColor.white,
-        ]
-        let str = NSAttributedString(string: label, attributes: attrs)
-        var labelOrigin = CGPoint(x: currentRect.minX + 4,
-                                  y: currentRect.maxY + 4)
-        // Keep label inside screen
-        if labelOrigin.y + 16 > bounds.maxY { labelOrigin.y = currentRect.minY - 18 }
-        str.draw(at: labelOrigin)
-    }
-
-    // MARK: Helpers
-
-    private func rectFrom(_ a: CGPoint, to b: CGPoint) -> CGRect {
-        CGRect(
-            x: min(a.x, b.x),
-            y: min(a.y, b.y),
-            width: abs(b.x - a.x),
-            height: abs(b.y - a.y)
-        )
-    }
-}
-
-// NSBezierPath reversed helper for punch-out fill
-private extension NSBezierPath {
-    var reversed: NSBezierPath {
-        let mutable = NSBezierPath()
-        var points = [NSPoint](repeating: .zero, count: 3)
-        for i in 0 ..< elementCount {
-            let type = element(at: i, associatedPoints: &points)
-            switch type {
-            case .moveTo:  mutable.move(to: points[0])
-            case .lineTo:  mutable.line(to: points[0])
-            case .curveTo: mutable.curve(to: points[2], controlPoint1: points[0], controlPoint2: points[1])
-            case .closePath: mutable.close()
-            case .cubicCurveTo: mutable.curve(to: points[2], controlPoint1: points[0], controlPoint2: points[1])
-            case .quadraticCurveTo: mutable.line(to: points[1])
-            @unknown default: break
-            }
-        }
-        // Wind in the opposite direction so the even-odd rule creates a cutout
-        mutable.windingRule = .evenOdd
-        return mutable
-    }
-}
+// Placeholder to keep old call sites from compiling if any remain
+// (AppDelegate now calls AdjustmentOverlayController.show directly)
 
 // MARK: - Adjustment Overlay (single-stage: frozen screen + live adjustable selection + inline toolbar)
 
@@ -247,7 +29,7 @@ final class AdjustmentOverlayController {
     private var resultPanels: [ResultPanel] = []
     private var toolbarHosting: NSHostingView<PinToolbarView>!
 
-    static func show(fullImage: NSImage, initialRect: CGRect, screen: NSScreen) {
+    static func show(fullImage: NSImage, initialRect: CGRect?, screen: NSScreen) {
         let ctrl = AdjustmentOverlayController(
             fullImage: fullImage, initialRect: initialRect, screen: screen
         )
@@ -255,7 +37,7 @@ final class AdjustmentOverlayController {
         ctrl.show()
     }
 
-    private init(fullImage: NSImage, initialRect: CGRect, screen: NSScreen) {
+    private init(fullImage: NSImage, initialRect: CGRect?, screen: NSScreen) {
         self.screen = screen
         self.fullImage = fullImage
 
@@ -317,9 +99,11 @@ final class AdjustmentOverlayController {
         toolbarPanel.contentView = toolbarHosting
 
         panel.makeKeyAndOrderFront(nil)
-        repositionToolbar()
-        toolbarPanel.orderFront(nil)
-        NSCursor.crosshair.push()
+        // Only show toolbar if we already have a selection; otherwise user draws first
+        if adjustView.hasSelection {
+            repositionToolbar()
+            toolbarPanel.orderFront(nil)
+        }
     }
 
     // MARK: - Toolbar positioning
@@ -358,7 +142,6 @@ final class AdjustmentOverlayController {
     // MARK: - Actions
 
     private func cancel() {
-        NSCursor.pop()
         resultPanels.forEach { $0.close() }
         resultPanels = []
         toolbarPanel.orderOut(nil)
@@ -445,26 +228,86 @@ final class AdjustmentOverlayView: NSView {
     // MARK: Handle geometry
     private enum Handle: Int, CaseIterable {
         case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
+
+        var cursor: NSCursor {
+            switch self {
+            case .topLeft, .bottomRight:
+                return Handle.diagonalCursor(nwse: true)
+            case .topRight, .bottomLeft:
+                return Handle.diagonalCursor(nwse: false)
+            case .top, .bottom:
+                return .resizeUpDown
+            case .left, .right:
+                return .resizeLeftRight
+            }
+        }
+
+        /// Load nwse or nesw resize cursor from macOS system resources.
+        /// Falls back to arrow if the system cursor cannot be loaded.
+        private static func diagonalCursor(nwse: Bool) -> NSCursor {
+            let name = nwse ? "resizenorthwestsoutheast" : "resizenortheastsouthwest"
+            let base = "/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/HIServices.framework/Versions/A/Resources/cursors"
+            let path = "\(base)/\(name)/cursor.pdf"
+            if let img = NSImage(contentsOfFile: path) {
+                img.size = NSSize(width: 20, height: 20)
+                return NSCursor(image: img, hotSpot: NSPoint(x: 10, y: 10))
+            }
+            return .arrow
+        }
     }
+
     private let handleRadius: CGFloat = 5
     private let handleHitRadius: CGFloat = 10
 
     // MARK: Drag state
     private enum DragMode {
+        case initialDraw(startMouse: CGPoint)
         case move(startRect: CGRect, startMouse: CGPoint)
         case handle(Handle, startRect: CGRect, startMouse: CGPoint)
         case none
     }
     private var dragMode: DragMode = .none
+    // True when no selection exists yet and user must draw the first one
+    private var isAwaitingInitialDraw: Bool = false
+
+    /// Whether a valid selection has been drawn
+    var hasSelection: Bool { !selectionRect.isEmpty }
 
     override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { false }  // bottom-left origin, same as NSScreen
 
-    init(frame: NSRect, fullImage: NSImage, initialRect: CGRect) {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    // MARK: Cursor rects
+
+    override func resetCursorRects() {
+        guard !isAwaitingInitialDraw, !selectionRect.isEmpty else {
+            addCursorRect(bounds, cursor: .crosshair)
+            return
+        }
+        // Handles (take priority — added last so they win in overlap)
+        for handle in Handle.allCases {
+            let pt = point(for: handle)
+            let r = CGRect(x: pt.x - handleHitRadius, y: pt.y - handleHitRadius,
+                           width: handleHitRadius * 2, height: handleHitRadius * 2)
+            addCursorRect(r, cursor: handle.cursor)
+        }
+        // Interior (move cursor)
+        addCursorRect(selectionRect, cursor: .openHand)
+        // Exterior
+        addCursorRect(bounds, cursor: .crosshair)
+    }
+
+    init(frame: NSRect, fullImage: NSImage, initialRect: CGRect?) {
         self.fullImage = fullImage
-        // initialRect is in global screen coords; offset to view-local
-        let screenOrigin = frame.origin
-        self.selectionRect = initialRect.offsetBy(dx: -screenOrigin.x, dy: -screenOrigin.y)
+        if let initialRect {
+            // initialRect is in global screen coords; offset to view-local
+            let screenOrigin = frame.origin
+            self.selectionRect = initialRect.offsetBy(dx: -screenOrigin.x, dy: -screenOrigin.y)
+        } else {
+            self.selectionRect = .zero
+            self.isAwaitingInitialDraw = true
+        }
         super.init(frame: CGRect(origin: .zero, size: frame.size))
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -476,6 +319,9 @@ final class AdjustmentOverlayView: NSView {
 
         // 1. Draw full-screen background image
         fullImage.draw(in: bounds)
+
+        // No selection yet — just show screenshot, crosshair cursor does the rest
+        guard !selectionRect.isEmpty else { return }
 
         // 2. Dim everything outside selection (even-odd punch-out)
         let outer = NSBezierPath(rect: bounds)
@@ -491,7 +337,7 @@ final class AdjustmentOverlayView: NSView {
         border.lineWidth = 1.5
         border.stroke()
 
-        // 4. Draw 8 handles
+        // 4. Draw 8 handles (always visible once a selection exists)
         for handle in Handle.allCases {
             let pt = point(for: handle)
             let dot = CGRect(x: pt.x - handleRadius, y: pt.y - handleRadius,
@@ -503,7 +349,7 @@ final class AdjustmentOverlayView: NSView {
             ctx.strokeEllipse(in: dot)
         }
 
-        // 5. Pixel label above selection
+        // 5. Pixel label
         let label = "\(Int(selectionRect.width)) × \(Int(selectionRect.height))"
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11, weight: .medium),
@@ -542,12 +388,23 @@ final class AdjustmentOverlayView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let pt = convert(event.locationInWindow, from: nil)
+        if isAwaitingInitialDraw {
+            dragMode = .initialDraw(startMouse: pt)
+            selectionRect = CGRect(origin: pt, size: .zero)
+            needsDisplay = true
+            return
+        }
         if let h = hitTestHandle(pt) {
             dragMode = .handle(h, startRect: selectionRect, startMouse: pt)
         } else if selectionRect.contains(pt) {
             dragMode = .move(startRect: selectionRect, startMouse: pt)
         } else {
-            dragMode = .none
+            // Click outside selection while one exists — start a new draw
+            isAwaitingInitialDraw = true
+            dragMode = .initialDraw(startMouse: pt)
+            selectionRect = CGRect(origin: pt, size: .zero)
+            needsDisplay = true
+            invalidateCursors()
             return
         }
         onDragBegan?()
@@ -556,26 +413,46 @@ final class AdjustmentOverlayView: NSView {
     override func mouseDragged(with event: NSEvent) {
         let pt = convert(event.locationInWindow, from: nil)
         switch dragMode {
+        case .initialDraw(let startMouse):
+            selectionRect = rectFrom(startMouse, to: pt)
+            needsDisplay = true
         case .move(let startRect, let startMouse):
             let dx = pt.x - startMouse.x
             let dy = pt.y - startMouse.y
             selectionRect = clamp(startRect.offsetBy(dx: dx, dy: dy))
+            needsDisplay = true
+            onSelectionChanged?()
         case .handle(let h, let startRect, let startMouse):
             selectionRect = resizedRect(startRect: startRect, startMouse: startMouse, currentMouse: pt, handle: h)
+            needsDisplay = true
+            onSelectionChanged?()
         case .none:
             return
         }
-        needsDisplay = true
-        onSelectionChanged?()
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard case .none = dragMode else {
+        switch dragMode {
+        case .initialDraw:
             dragMode = .none
+            if selectionRect.width > 4, selectionRect.height > 4 {
+                isAwaitingInitialDraw = false
+                needsDisplay = true
+                invalidateCursors()
+                onDragEnded?()  // triggers toolbar to appear
+            } else {
+                selectionRect = .zero
+                isAwaitingInitialDraw = true
+                needsDisplay = true
+                invalidateCursors()
+            }
+        case .move, .handle:
+            dragMode = .none
+            invalidateCursors()
             onDragEnded?()
-            return
+        case .none:
+            dragMode = .none
         }
-        dragMode = .none
     }
 
     override func keyDown(with event: NSEvent) {
@@ -605,6 +482,15 @@ final class AdjustmentOverlayView: NSView {
         let x = min(minX, maxX), y = min(minY, maxY)
         let w = abs(maxX - minX), h = abs(maxY - minY)
         return clamp(CGRect(x: x, y: y, width: max(4, w), height: max(4, h)))
+    }
+
+    private func invalidateCursors() {
+        window?.invalidateCursorRects(for: self)
+    }
+
+    private func rectFrom(_ a: CGPoint, to b: CGPoint) -> CGRect {
+        CGRect(x: min(a.x, b.x), y: min(a.y, b.y),
+               width: abs(b.x - a.x), height: abs(b.y - a.y))
     }
 
     private func clamp(_ r: CGRect) -> CGRect {
