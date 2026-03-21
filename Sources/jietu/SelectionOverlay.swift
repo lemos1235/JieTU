@@ -95,7 +95,6 @@ final class AdjustmentOverlayController {
             onCopy:      { [weak self] in self?.performCopy() }
         )
         toolbarHosting = NSHostingView(rootView: toolbarView)
-        toolbarHosting.frame = CGRect(x: 0, y: 0, width: 220, height: 44)
         toolbarPanel.contentView = toolbarHosting
 
         panel.makeKeyAndOrderFront(nil)
@@ -111,15 +110,16 @@ final class AdjustmentOverlayController {
     private func repositionToolbar() {
         let sel = adjustView.selectionRect
         let screenOrigin = screen.frame.origin
-        let toolbarW: CGFloat = 220
-        let toolbarH: CGFloat = 44
+        let toolbarW = toolbarHosting.fittingSize.width
+        let toolbarH = toolbarHosting.fittingSize.height
         let gap: CGFloat = 8
-        let x = screenOrigin.x + sel.maxX - toolbarW
+        let x = screenOrigin.x + sel.maxX - toolbarW + 4 // compensate PinToolbarView's 4pt shadow padding
         let y = screenOrigin.y + sel.minY - toolbarH - gap
         toolbarPanel.setFrame(
             CGRect(x: x, y: max(screenOrigin.y + 4, y), width: toolbarW, height: toolbarH),
             display: true
         )
+        toolbarHosting.frame = CGRect(origin: .zero, size: CGSize(width: toolbarW, height: toolbarH))
     }
 
     // MARK: - Crop helper

@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:jietu}",
+            "name": "Debug jietu",
+            "target": "jietu",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug jietu"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:jietu}",
+            "name": "Release jietu",
+            "target": "jietu",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release jietu"
+        }
+    ]
+}

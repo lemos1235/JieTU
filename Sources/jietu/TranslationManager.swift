@@ -12,7 +12,7 @@
 import AppKit
 import Combine
 import SwiftUI
-import Translation
+@preconcurrency import Translation
 
 @MainActor
 final class TranslationManager {
@@ -101,16 +101,27 @@ final class TranslationBridge: ObservableObject {
         }
     }
 
-    func runSession(_ session: TranslationSession) async {
-        guard let cont = pendingContinuation else { return }
-        pendingContinuation = nil
-        do {
-            let response = try await session.translate(pendingText)
-            cont.resume(returning: response.targetText)
-        } catch {
-            cont.resume(throwing: error)
+    nonisolated func runSession(_ session: TranslationSession) async {
+        let request = await MainActor.run { () -> (text: String, continuation: CheckedContinuation<String, Error>)? in
+            guard let continuation = pendingContinuation else { return nil }
+            let text = pendingText
+            pendingContinuation = nil
+            return (text, continuation)
         }
-        // Reset so the task doesn't re-fire
-        configuration = nil
+
+        guard let request else { return }
+
+        do {
+            let response = try await session.translate(request.text)
+            await MainActor.run {
+                request.continuation.resume(returning: response.targetText)
+                configuration = nil
+            }
+        } catch {
+            await MainActor.run {
+                request.continuation.resume(throwing: error)
+                configuration = nil
+            }
+        }
     }
 }
