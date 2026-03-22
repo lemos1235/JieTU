@@ -1,14 +1,14 @@
 //
-//  jietuApp.swift
-//  jietu
+//  JieTUApp.swift
+//  JieTU
 //
-//  Created by Alfred Jobs on 2026/3/21.
+//  Created by Alfred Jobs on 2026/3/22.
 //
 
 import SwiftUI
 
 @main
-struct jietuApp: App {
+struct JieTUApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {

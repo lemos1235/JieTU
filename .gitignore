@@ -1,7 +1,50 @@
-.DS_Store
-/.build
-/Packages
+# Xcode
+*.xcuserstate
 xcuserdata/
+*.xcscmblueprint
+*.xccheckout
 DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Build
+build/
+*.o
+*.d
+
+# Swift Package Manager
+.build/
 .swiftpm/
-.netrc
+*.resolved
+
+# CocoaPods
+Pods/
+Podfile.lock
+
+# Carthage
+Carthage/Build/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon\r
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# VS Code
+.vscode/
+
+# Claude Code
+.claude/settings.local.json
+
+# Others
+buildServer.json

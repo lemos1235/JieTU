@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(xcodebuild -scheme jietu -configuration Debug -destination 'platform=macOS' build)",
-      "Bash(xcodebuild -scheme jietu -configuration Debug build)",
-      "Bash(swift build:*)"
-    ]
-  }
-}
