@@ -29,7 +29,10 @@ final class PinToolbarPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         ignoresMouseEvents = false
     }
-    override var canBecomeKey: Bool { false }
+
+    override var canBecomeKey: Bool {
+        false
+    }
 }
 
 // MARK: - SwiftUI Toolbar View
@@ -56,8 +59,10 @@ struct PinToolbarView: View {
                 }
             }
 
-            toolbarButton(icon: "globe", label: "翻译", color: .primary,
-                          busy: isTranslateBusy) {
+            toolbarButton(
+                icon: "globe", label: "翻译", color: .primary,
+                busy: isTranslateBusy
+            ) {
                 isTranslateBusy = true
                 onTranslate()
             }
@@ -83,7 +88,6 @@ struct PinToolbarView: View {
         isTranslateBusy = false
     }
 
-    @ViewBuilder
     private func toolbarButton(
         icon: String,
         label: String,

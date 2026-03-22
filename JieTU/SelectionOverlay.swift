@@ -17,8 +17,13 @@ import UniformTypeIdentifiers
 // MARK: - Adjustment Overlay (single-stage: frozen screen + live adjustable selection + inline toolbar)
 
 final class SelectionOverlayPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override var canBecomeMain: Bool {
+        false
+    }
 }
 
 struct MagnifierSnapshot {
@@ -29,8 +34,13 @@ struct MagnifierSnapshot {
 }
 
 final class OverlayMagnifierPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
+    override var canBecomeKey: Bool {
+        false
+    }
+
+    override var canBecomeMain: Bool {
+        false
+    }
 }
 
 final class OverlayMagnifierView: NSView {
@@ -42,11 +52,14 @@ final class OverlayMagnifierView: NSView {
         didSet { needsDisplay = true }
     }
 
-    override var isOpaque: Bool { false }
+    override var isOpaque: Bool {
+        false
+    }
 
-    override func draw(_ dirtyRect: NSRect) {
+    override func draw(_: NSRect) {
         guard let snapshot,
-              let ctx = NSGraphicsContext.current?.cgContext else { return }
+              let ctx = NSGraphicsContext.current?.cgContext
+        else { return }
 
         let headerHeight: CGFloat = 22
         let frame = bounds
@@ -57,7 +70,9 @@ final class OverlayMagnifierView: NSView {
             height: frame.height - magnifierInset * 2 - headerHeight
         )
         let previousInterpolation = NSGraphicsContext.current?.imageInterpolation
-        let outerPath = NSBezierPath(roundedRect: frame, xRadius: magnifierCornerRadius, yRadius: magnifierCornerRadius)
+        let outerPath = NSBezierPath(
+            roundedRect: frame, xRadius: magnifierCornerRadius, yRadius: magnifierCornerRadius
+        )
 
         ctx.saveGState()
         let shadow = NSShadow()
@@ -88,9 +103,10 @@ final class OverlayMagnifierView: NSView {
 
         let labelAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .medium),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.88)
+            .foregroundColor: NSColor.white.withAlphaComponent(0.88),
         ]
-        let coords = "\(Int(snapshot.localPoint.x)), \(Int(snapshot.overlaySize.height - snapshot.localPoint.y))"
+        let coords =
+            "\(Int(snapshot.localPoint.x)), \(Int(snapshot.overlaySize.height - snapshot.localPoint.y))"
         (coords as NSString).draw(
             at: CGPoint(x: headerRect.minX + 10, y: headerRect.minY + 5),
             withAttributes: labelAttrs
@@ -106,8 +122,11 @@ final class OverlayMagnifierView: NSView {
         ctx.saveGState()
         NSBezierPath(roundedRect: contentRect, xRadius: 8, yRadius: 8).addClip()
         NSGraphicsContext.current?.imageInterpolation = .none
-        NSImage(cgImage: snapshot.croppedImage, size: NSSize(width: snapshot.croppedImage.width, height: snapshot.croppedImage.height))
-            .draw(in: contentRect)
+        NSImage(
+            cgImage: snapshot.croppedImage,
+            size: NSSize(width: snapshot.croppedImage.width, height: snapshot.croppedImage.height)
+        )
+        .draw(in: contentRect)
         ctx.restoreGState()
         NSGraphicsContext.current?.imageInterpolation = previousInterpolation ?? .default
 
@@ -128,7 +147,9 @@ final class OverlayMagnifierView: NSView {
         ctx.addLine(to: CGPoint(x: contentRect.maxX, y: contentRect.midY))
         ctx.strokePath()
 
-        let centerDot = CGRect(x: contentRect.midX - 2.5, y: contentRect.midY - 2.5, width: 5, height: 5)
+        let centerDot = CGRect(
+            x: contentRect.midX - 2.5, y: contentRect.midY - 2.5, width: 5, height: 5
+        )
         ctx.setFillColor(NSColor.systemRed.withAlphaComponent(0.95).cgColor)
         ctx.fillEllipse(in: centerDot)
 
@@ -147,7 +168,9 @@ final class OverlayToolbarHostingView<Content: View>: NSHostingView<Content> {
         }
         trackingArea = NSTrackingArea(
             rect: .zero,
-            options: [.activeAlways, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited, .cursorUpdate],
+            options: [
+                .activeAlways, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited, .cursorUpdate,
+            ],
             owner: self,
             userInfo: nil
         )
@@ -160,22 +183,21 @@ final class OverlayToolbarHostingView<Content: View>: NSHostingView<Content> {
         addCursorRect(bounds, cursor: .arrow)
     }
 
-    override func mouseEntered(with event: NSEvent) {
+    override func mouseEntered(with _: NSEvent) {
         NSCursor.arrow.set()
     }
 
-    override func mouseMoved(with event: NSEvent) {
+    override func mouseMoved(with _: NSEvent) {
         NSCursor.arrow.set()
     }
 
-    override func cursorUpdate(with event: NSEvent) {
+    override func cursorUpdate(with _: NSEvent) {
         NSCursor.arrow.set()
     }
 }
 
 @MainActor
 final class AdjustmentOverlayController {
-
     static var active: AdjustmentOverlayController?
 
     private let panel: SelectionOverlayPanel
@@ -243,7 +265,9 @@ final class AdjustmentOverlayController {
         magnifierPanel.isReleasedWhenClosed = false
         magnifierPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         magnifierPanel.ignoresMouseEvents = true
-        magnifierView = OverlayMagnifierView(frame: CGRect(origin: .zero, size: OverlayMagnifierView.panelSize))
+        magnifierView = OverlayMagnifierView(
+            frame: CGRect(origin: .zero, size: OverlayMagnifierView.panelSize)
+        )
         magnifierPanel.contentView = magnifierView
 
         adjustView = AdjustmentOverlayView(
@@ -255,9 +279,9 @@ final class AdjustmentOverlayController {
     }
 
     private func show() {
-        adjustView.onCancel         = { [weak self] in self?.cancel() }
-        adjustView.onDragBegan      = { [weak self] in self?.toolbarPanel.orderOut(nil) }
-        adjustView.onDragEnded      = { [weak self] in
+        adjustView.onCancel = { [weak self] in self?.cancel() }
+        adjustView.onDragBegan = { [weak self] in self?.toolbarPanel.orderOut(nil) }
+        adjustView.onDragEnded = { [weak self] in
             self?.repositionToolbar()
             self?.toolbarPanel.orderFront(nil)
         }
@@ -269,11 +293,11 @@ final class AdjustmentOverlayController {
         }
 
         let toolbarView = PinToolbarView(
-            onClose:     { [weak self] in self?.cancel() },
-            onPin:       { [weak self] in self?.performPin() },
+            onClose: { [weak self] in self?.cancel() },
+            onPin: { [weak self] in self?.performPin() },
             onTranslate: { [weak self] in self?.performTranslate() },
-            onSave:      { [weak self] in self?.performSave() },
-            onCopy:      { [weak self] in self?.performCopy() }
+            onSave: { [weak self] in self?.performSave() },
+            onCopy: { [weak self] in self?.performCopy() }
         )
         toolbarHosting = OverlayToolbarHostingView(rootView: toolbarView)
         toolbarPanel.contentView = toolbarHosting
@@ -303,20 +327,24 @@ final class AdjustmentOverlayController {
             CGRect(x: x, y: max(screenOrigin.y + 4, y), width: toolbarW, height: toolbarH),
             display: true
         )
-        toolbarHosting.frame = CGRect(origin: .zero, size: CGSize(width: toolbarW, height: toolbarH))
+        toolbarHosting.frame = CGRect(
+            origin: .zero, size: CGSize(width: toolbarW, height: toolbarH)
+        )
     }
 
     // MARK: - Crop helper
 
     private func cropCurrentSelection() -> NSImage? {
         let sel = adjustView.selectionRect
-        guard let cgFull = fullImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
-        let scaleX = CGFloat(cgFull.width)  / screen.frame.width
+        guard let cgFull = fullImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return nil
+        }
+        let scaleX = CGFloat(cgFull.width) / screen.frame.width
         let scaleY = CGFloat(cgFull.height) / screen.frame.height
         let cropCG = CGRect(
             x: sel.minX * scaleX,
             y: (screen.frame.height - sel.maxY) * scaleY,
-            width:  sel.width  * scaleX,
+            width: sel.width * scaleX,
             height: sel.height * scaleY
         )
         guard let cropped = cgFull.cropping(to: cropCG) else { return nil }
@@ -343,7 +371,10 @@ final class AdjustmentOverlayController {
 
         magnifierView.snapshot = snapshot
         magnifierPanel.setFrame(
-            CGRect(origin: magnifierOrigin(near: snapshot.screenPoint), size: OverlayMagnifierView.panelSize),
+            CGRect(
+                origin: magnifierOrigin(near: snapshot.screenPoint),
+                size: OverlayMagnifierView.panelSize
+            ),
             display: true
         )
         magnifierPanel.orderFront(nil)
@@ -388,9 +419,12 @@ final class AdjustmentOverlayController {
                     return
                 }
                 let source = lines.joined(separator: "\n")
-                let targetLang = (NSApp.delegate as? AppDelegate)?.targetLanguage
-                    ?? Locale.Language(identifier: "zh-Hans")
-                let translated = try await TranslationManager.shared.translate(source, to: targetLang)
+                let targetLang =
+                    (NSApp.delegate as? AppDelegate)?.targetLanguage
+                        ?? Locale.Language(identifier: "zh-Hans")
+                let translated = try await TranslationManager.shared.translate(
+                    source, to: targetLang
+                )
                 showResult(text: "原文：\n\(source)\n\n译文：\n\(translated)", title: "翻译结果")
             } catch {
                 showResult(text: "翻译失败：\(error.localizedDescription)", title: "翻译")
@@ -411,7 +445,8 @@ final class AdjustmentOverlayController {
             if response == .OK, let url = savePanel.url,
                let tiff = img.tiffRepresentation,
                let bitmap = NSBitmapImageRep(data: tiff),
-               let png = bitmap.representation(using: .png, properties: [:]) {
+               let png = bitmap.representation(using: .png, properties: [:])
+            {
                 try? png.write(to: url)
             }
             self?.cancel()
@@ -438,10 +473,9 @@ final class AdjustmentOverlayController {
 // MARK: - AdjustmentOverlayView
 
 final class AdjustmentOverlayView: NSView {
-
-    var onCancel:           (() -> Void)?
-    var onDragBegan:        (() -> Void)?
-    var onDragEnded:        (() -> Void)?
+    var onCancel: (() -> Void)?
+    var onDragBegan: (() -> Void)?
+    var onDragEnded: (() -> Void)?
     var onSelectionChanged: (() -> Void)?
     var onMagnifierChanged: ((MagnifierSnapshot?) -> Void)?
     var shouldUseArrowCursorAtScreenPoint: ((CGPoint) -> Bool)?
@@ -453,6 +487,7 @@ final class AdjustmentOverlayView: NSView {
     private var trackingArea: NSTrackingArea?
 
     // MARK: Handle geometry
+
     private enum Handle: Int, CaseIterable {
         case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
 
@@ -473,7 +508,8 @@ final class AdjustmentOverlayView: NSView {
         /// Falls back to arrow if the system cursor cannot be loaded.
         private static func diagonalCursor(nwse: Bool) -> NSCursor {
             let name = nwse ? "resizenorthwestsoutheast" : "resizenortheastsouthwest"
-            let base = "/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/HIServices.framework/Versions/A/Resources/cursors"
+            let base =
+                "/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/HIServices.framework/Versions/A/Resources/cursors"
             let path = "\(base)/\(name)/cursor.pdf"
             if let img = NSImage(contentsOfFile: path) {
                 img.size = NSSize(width: 20, height: 20)
@@ -492,23 +528,34 @@ final class AdjustmentOverlayView: NSView {
     private let magnifierSampleSize = CGSize(width: 14, height: 10)
 
     // MARK: Drag state
+
     private enum DragMode {
         case initialDraw(startMouse: CGPoint)
         case move(startRect: CGRect, startMouse: CGPoint)
         case handle(Handle, startRect: CGRect, startMouse: CGPoint)
         case none
     }
+
     private var dragMode: DragMode = .none
-    // True when no selection exists yet and user must draw the first one
+    /// True when no selection exists yet and user must draw the first one
     private var isAwaitingInitialDraw: Bool = false
 
     /// Whether a valid selection has been drawn
-    var hasSelection: Bool { !selectionRect.isEmpty }
+    var hasSelection: Bool {
+        !selectionRect.isEmpty
+    }
 
-    override var acceptsFirstResponder: Bool { true }
-    override var isFlipped: Bool { false }  // bottom-left origin, same as NSScreen
+    override var acceptsFirstResponder: Bool {
+        true
+    }
 
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var isFlipped: Bool {
+        false
+    } // bottom-left origin, same as NSScreen
+
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
+        true
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -522,7 +569,10 @@ final class AdjustmentOverlayView: NSView {
         }
         trackingArea = NSTrackingArea(
             rect: .zero,
-            options: [.activeAlways, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited, .enabledDuringMouseDrag, .cursorUpdate],
+            options: [
+                .activeAlways, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited,
+                .enabledDuringMouseDrag, .cursorUpdate,
+            ],
             owner: self,
             userInfo: nil
         )
@@ -540,8 +590,10 @@ final class AdjustmentOverlayView: NSView {
         // Handles (take priority — added last so they win in overlap)
         for handle in Handle.allCases {
             let pt = point(for: handle)
-            let r = CGRect(x: pt.x - handleHitRadius, y: pt.y - handleHitRadius,
-                           width: handleHitRadius * 2, height: handleHitRadius * 2)
+            let r = CGRect(
+                x: pt.x - handleHitRadius, y: pt.y - handleHitRadius,
+                width: handleHitRadius * 2, height: handleHitRadius * 2
+            )
             addCursorRect(r, cursor: handle.cursor)
         }
         // Interior (move cursor)
@@ -552,22 +604,26 @@ final class AdjustmentOverlayView: NSView {
 
     init(frame: NSRect, fullImage: NSImage, initialRect: CGRect?) {
         self.fullImage = fullImage
-        self.fullCGImage = fullImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        fullCGImage = fullImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
         if let initialRect {
             // initialRect is in global screen coords; offset to view-local
             let screenOrigin = frame.origin
-            self.selectionRect = initialRect.offsetBy(dx: -screenOrigin.x, dy: -screenOrigin.y)
+            selectionRect = initialRect.offsetBy(dx: -screenOrigin.x, dy: -screenOrigin.y)
         } else {
-            self.selectionRect = .zero
-            self.isAwaitingInitialDraw = true
+            selectionRect = .zero
+            isAwaitingInitialDraw = true
         }
         super.init(frame: CGRect(origin: .zero, size: frame.size))
     }
-    required init?(coder: NSCoder) { fatalError() }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError()
+    }
 
     // MARK: Drawing
 
-    override func draw(_ dirtyRect: NSRect) {
+    override func draw(_: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
 
         // 1. Draw full-screen background image
@@ -591,8 +647,10 @@ final class AdjustmentOverlayView: NSView {
             // 4. Draw 8 handles (always visible once a selection exists)
             for handle in Handle.allCases {
                 let pt = point(for: handle)
-                let dot = CGRect(x: pt.x - handleRadius, y: pt.y - handleRadius,
-                                 width: handleRadius * 2, height: handleRadius * 2)
+                let dot = CGRect(
+                    x: pt.x - handleRadius, y: pt.y - handleRadius,
+                    width: handleRadius * 2, height: handleRadius * 2
+                )
                 ctx.setFillColor(NSColor.white.cgColor)
                 ctx.setStrokeColor(NSColor(white: 0.3, alpha: 1).cgColor)
                 ctx.setLineWidth(1)
@@ -604,14 +662,13 @@ final class AdjustmentOverlayView: NSView {
             let label = "\(Int(selectionRect.width)) × \(Int(selectionRect.height))"
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-                .foregroundColor: NSColor.white
+                .foregroundColor: NSColor.white,
             ]
             let labelSize = (label as NSString).size(withAttributes: attrs)
             let labelX = selectionRect.midX - labelSize.width / 2
             let labelY = selectionRect.maxY + 6
             (label as NSString).draw(at: CGPoint(x: labelX, y: labelY), withAttributes: attrs)
         }
-
     }
 
     // MARK: Handle positions
@@ -619,14 +676,14 @@ final class AdjustmentOverlayView: NSView {
     private func point(for handle: Handle) -> CGPoint {
         let r = selectionRect
         switch handle {
-        case .topLeft:     return CGPoint(x: r.minX, y: r.maxY)
-        case .top:         return CGPoint(x: r.midX, y: r.maxY)
-        case .topRight:    return CGPoint(x: r.maxX, y: r.maxY)
-        case .right:       return CGPoint(x: r.maxX, y: r.midY)
+        case .topLeft: return CGPoint(x: r.minX, y: r.maxY)
+        case .top: return CGPoint(x: r.midX, y: r.maxY)
+        case .topRight: return CGPoint(x: r.maxX, y: r.maxY)
+        case .right: return CGPoint(x: r.maxX, y: r.midY)
         case .bottomRight: return CGPoint(x: r.maxX, y: r.minY)
-        case .bottom:      return CGPoint(x: r.midX, y: r.minY)
-        case .bottomLeft:  return CGPoint(x: r.minX, y: r.minY)
-        case .left:        return CGPoint(x: r.minX, y: r.midY)
+        case .bottom: return CGPoint(x: r.midX, y: r.minY)
+        case .bottomLeft: return CGPoint(x: r.minX, y: r.minY)
+        case .left: return CGPoint(x: r.minX, y: r.midY)
         }
     }
 
@@ -648,7 +705,7 @@ final class AdjustmentOverlayView: NSView {
         let threshold = handleHitRadius
         var matches: [(Handle, CGFloat)] = []
 
-        if pt.y >= r.minY - threshold && pt.y <= r.maxY + threshold {
+        if pt.y >= r.minY - threshold, pt.y <= r.maxY + threshold {
             let leftDistance = abs(pt.x - r.minX)
             if leftDistance <= threshold {
                 matches.append((.left, leftDistance))
@@ -660,7 +717,7 @@ final class AdjustmentOverlayView: NSView {
             }
         }
 
-        if pt.x >= r.minX - threshold && pt.x <= r.maxX + threshold {
+        if pt.x >= r.minX - threshold, pt.x <= r.maxX + threshold {
             let bottomDistance = abs(pt.y - r.minY)
             if bottomDistance <= threshold {
                 matches.append((.bottom, bottomDistance))
@@ -722,19 +779,21 @@ final class AdjustmentOverlayView: NSView {
         updatePointerLocation(with: event)
         let pt = convert(event.locationInWindow, from: nil)
         switch dragMode {
-        case .initialDraw(let startMouse):
+        case let .initialDraw(startMouse):
             selectionRect = rectFrom(startMouse, to: pt)
             notifyMagnifierChanged()
             needsDisplay = true
-        case .move(let startRect, let startMouse):
+        case let .move(startRect, startMouse):
             let dx = pt.x - startMouse.x
             let dy = pt.y - startMouse.y
             selectionRect = clamp(startRect.offsetBy(dx: dx, dy: dy))
             notifyMagnifierChanged()
             needsDisplay = true
             onSelectionChanged?()
-        case .handle(let h, let startRect, let startMouse):
-            selectionRect = resizedRect(startRect: startRect, startMouse: startMouse, currentMouse: pt, handle: h)
+        case let .handle(h, startRect, startMouse):
+            selectionRect = resizedRect(
+                startRect: startRect, startMouse: startMouse, currentMouse: pt, handle: h
+            )
             notifyMagnifierChanged()
             needsDisplay = true
             onSelectionChanged?()
@@ -754,7 +813,7 @@ final class AdjustmentOverlayView: NSView {
                 invalidateCursors()
                 applyCursor(at: convert(event.locationInWindow, from: nil))
                 notifyMagnifierChanged()
-                onDragEnded?()  // triggers toolbar to appear
+                onDragEnded?() // triggers toolbar to appear
             } else {
                 selectionRect = .zero
                 isAwaitingInitialDraw = true
@@ -775,8 +834,12 @@ final class AdjustmentOverlayView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 { onCancel?() }  // Escape
-        else { super.keyDown(with: event) }
+        if event.keyCode == 53 {
+            onCancel?()
+        } // Escape
+        else {
+            super.keyDown(with: event)
+        }
     }
 
     // MARK: Resize logic
@@ -795,7 +858,8 @@ final class AdjustmentOverlayView: NSView {
         let centerY = (bounds.height - pointer.y) * scaleY
         let originX = min(max(0, centerX - sampleWidth / 2), CGFloat(image.width) - sampleWidth)
         let originY = min(max(0, centerY - sampleHeight / 2), CGFloat(image.height) - sampleHeight)
-        let cropRect = CGRect(x: originX, y: originY, width: sampleWidth, height: sampleHeight).integral
+        let cropRect = CGRect(x: originX, y: originY, width: sampleWidth, height: sampleHeight)
+            .integral
         return image.cropping(to: cropRect)
     }
 
@@ -826,7 +890,8 @@ final class AdjustmentOverlayView: NSView {
 
     private func cursor(for point: CGPoint) -> NSCursor {
         if let shouldUseArrowCursorAtScreenPoint,
-           shouldUseArrowCursorAtScreenPoint(screenPoint(for: point)) {
+           shouldUseArrowCursorAtScreenPoint(screenPoint(for: point))
+        {
             return .arrow
         }
         if isAwaitingInitialDraw || selectionRect.isEmpty {
@@ -857,7 +922,8 @@ final class AdjustmentOverlayView: NSView {
         guard let pointerLocation,
               shouldShowMagnifier(at: pointerLocation),
               let fullCGImage,
-              let croppedImage = magnifierCrop(around: pointerLocation, from: fullCGImage) else { return nil }
+              let croppedImage = magnifierCrop(around: pointerLocation, from: fullCGImage)
+        else { return nil }
         return MagnifierSnapshot(
             screenPoint: screenPoint(for: pointerLocation),
             localPoint: pointerLocation,
@@ -866,25 +932,40 @@ final class AdjustmentOverlayView: NSView {
         )
     }
 
-    private func resizedRect(startRect: CGRect, startMouse: CGPoint,
-                                currentMouse: CGPoint, handle: Handle) -> CGRect {
+    private func resizedRect(
+        startRect: CGRect, startMouse: CGPoint,
+        currentMouse: CGPoint, handle: Handle
+    ) -> CGRect {
         let dx = currentMouse.x - startMouse.x
         let dy = currentMouse.y - startMouse.y
-        var minX = startRect.minX, maxX = startRect.maxX
-        var minY = startRect.minY, maxY = startRect.maxY
+        var minX = startRect.minX
+        var maxX = startRect.maxX
+        var minY = startRect.minY
+        var maxY = startRect.maxY
         switch handle {
-        case .topLeft:     maxX = startRect.maxX; maxY = startRect.minY + startRect.height + dy; minX = startRect.minX + dx
-        case .top:         maxY = startRect.minY + startRect.height + dy
-        case .topRight:    maxX = startRect.minX + startRect.width + dx; maxY = startRect.minY + startRect.height + dy
-        case .right:       maxX = startRect.minX + startRect.width + dx
-        case .bottomRight: maxX = startRect.minX + startRect.width + dx; minY = startRect.minY + dy
-        case .bottom:      minY = startRect.minY + dy
-        case .bottomLeft:  minX = startRect.minX + dx; minY = startRect.minY + dy
-        case .left:        minX = startRect.minX + dx
+        case .topLeft:
+            maxX = startRect.maxX
+            maxY = startRect.minY + startRect.height + dy
+            minX = startRect.minX + dx
+        case .top: maxY = startRect.minY + startRect.height + dy
+        case .topRight:
+            maxX = startRect.minX + startRect.width + dx
+            maxY = startRect.minY + startRect.height + dy
+        case .right: maxX = startRect.minX + startRect.width + dx
+        case .bottomRight:
+            maxX = startRect.minX + startRect.width + dx
+            minY = startRect.minY + dy
+        case .bottom: minY = startRect.minY + dy
+        case .bottomLeft:
+            minX = startRect.minX + dx
+            minY = startRect.minY + dy
+        case .left: minX = startRect.minX + dx
         }
         // Normalize so width/height are always positive
-        let x = min(minX, maxX), y = min(minY, maxY)
-        let w = abs(maxX - minX), h = abs(maxY - minY)
+        let x = min(minX, maxX)
+        let y = min(minY, maxY)
+        let w = abs(maxX - minX)
+        let h = abs(maxY - minY)
         return clamp(CGRect(x: x, y: y, width: max(4, w), height: max(4, h)))
     }
 
@@ -893,13 +974,17 @@ final class AdjustmentOverlayView: NSView {
     }
 
     private func rectFrom(_ a: CGPoint, to b: CGPoint) -> CGRect {
-        CGRect(x: min(a.x, b.x), y: min(a.y, b.y),
-               width: abs(b.x - a.x), height: abs(b.y - a.y))
+        CGRect(
+            x: min(a.x, b.x), y: min(a.y, b.y),
+            width: abs(b.x - a.x), height: abs(b.y - a.y)
+        )
     }
 
     private func clamp(_ r: CGRect) -> CGRect {
-        let x = max(0, min(r.origin.x, bounds.width  - r.width))
+        let x = max(0, min(r.origin.x, bounds.width - r.width))
         let y = max(0, min(r.origin.y, bounds.height - r.height))
-        return CGRect(x: x, y: y, width: min(r.width, bounds.width), height: min(r.height, bounds.height))
+        return CGRect(
+            x: x, y: y, width: min(r.width, bounds.width), height: min(r.height, bounds.height)
+        )
     }
 }

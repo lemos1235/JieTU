@@ -8,7 +8,6 @@
 import AppKit
 
 final class PinWindow: NSPanel {
-
     var onDragBegan: (() -> Void)?
     var onDragEnded: (() -> Void)?
 
@@ -38,6 +37,11 @@ final class PinWindow: NSPanel {
         backgroundColor = .clear
     }
 
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override var canBecomeMain: Bool {
+        false
+    }
 }

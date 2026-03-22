@@ -10,14 +10,15 @@ import ScreenCaptureKit
 
 @MainActor
 enum ScreenPermission {
-
     static func requestIfNeeded() {
         Task {
             do {
                 // Attempting to get shareable content will trigger the permission prompt
                 // if the user hasn't granted screen recording access yet.
-                _ = try await SCShareableContent.excludingDesktopWindows(false,
-                                                                          onScreenWindowsOnly: true)
+                _ = try await SCShareableContent.excludingDesktopWindows(
+                    false,
+                    onScreenWindowsOnly: true
+                )
             } catch {
                 // Permission denied or not yet granted — open System Settings
                 showPermissionAlert()
@@ -34,7 +35,10 @@ enum ScreenPermission {
         alert.alertStyle = .warning
 
         if alert.runModal() == .alertFirstButtonReturn {
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            if let url = URL(
+                string:
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+            ) {
                 NSWorkspace.shared.open(url)
             }
         }

@@ -16,7 +16,6 @@ import SwiftUI
 
 @MainActor
 final class TranslationManager {
-
     static let shared = TranslationManager()
 
     private var hostingController: NSHostingController<TranslationCarrierView>?
@@ -41,7 +40,7 @@ final class TranslationManager {
             )
             hiddenWindow.contentViewController = hc
             hiddenWindow.orderOut(nil)
-            self.hostingController = hc
+            hostingController = hc
         }
 
         guard let carrier else { throw TranslationError.notReady }
@@ -59,8 +58,7 @@ final class TranslationManager {
 /// A hidden SwiftUI view that hosts a TranslationSession via .translationTask.
 @MainActor
 struct TranslationCarrierView: View {
-
-    // Request/response bridge
+    /// Request/response bridge
     private let bridge = TranslationBridge()
 
     var body: some View {
@@ -80,12 +78,11 @@ struct TranslationCarrierView: View {
 
 @MainActor
 final class TranslationBridge: ObservableObject {
-
     @Published var configuration: TranslationSession.Configuration?
 
     // Pending request
     private var pendingText: String = ""
-    private var pendingLanguage: Locale.Language = Locale.Language(identifier: "zh-Hans")
+    private var pendingLanguage: Locale.Language = .init(identifier: "zh-Hans")
     private var pendingContinuation: CheckedContinuation<String, Error>?
 
     func request(text: String, targetLanguage: Locale.Language) async throws -> String {
@@ -102,7 +99,8 @@ final class TranslationBridge: ObservableObject {
     }
 
     nonisolated func runSession(_ session: TranslationSession) async {
-        let request = await MainActor.run { () -> (text: String, continuation: CheckedContinuation<String, Error>)? in
+        let request = await MainActor.run {
+            () -> (text: String, continuation: CheckedContinuation<String, Error>)? in
             guard let continuation = pendingContinuation else { return nil }
             let text = pendingText
             pendingContinuation = nil

@@ -9,7 +9,6 @@ import AppKit
 
 @MainActor
 enum StatusMenuBuilder {
-
     static let languages: [(title: String, identifier: String)] = [
         ("简体中文", "zh-Hans"),
         ("English", "en"),
@@ -26,7 +25,9 @@ enum StatusMenuBuilder {
             keyEquivalent: ""
         )
         screenshotItem.target = delegate
-        screenshotItem.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: nil)
+        screenshotItem.image = NSImage(
+            systemSymbolName: "camera.viewfinder", accessibilityDescription: nil
+        )
         menu.addItem(screenshotItem)
 
         menu.addItem(.separator())

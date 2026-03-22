@@ -34,14 +34,16 @@ final class ResultPanel: NSPanel {
         scroll.hasVerticalScroller = true
         contentView = scroll
     }
-    override var canBecomeKey: Bool { true }
+
+    override var canBecomeKey: Bool {
+        true
+    }
 }
 
 // MARK: - Controller
 
 @MainActor
 final class PinWindowController: NSWindowController, NSWindowDelegate {
-
     private static var all: [PinWindowController] = []
 
     private let image: NSImage
@@ -64,7 +66,7 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
 
     init(image: NSImage, initialFrame: CGRect? = nil) {
         self.image = image
-        self.toolbarPanel = PinToolbarPanel()
+        toolbarPanel = PinToolbarPanel()
 
         let windowFrame: CGRect
         if let initialFrame {
@@ -74,15 +76,19 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
             let screen = NSScreen.main ?? NSScreen.screens[0]
             let maxSize = CGSize(
                 width: screen.visibleFrame.width * 0.6,
-                height: screen.visibleFrame.height * 0.6)
+                height: screen.visibleFrame.height * 0.6
+            )
             let scale = min(
                 1.0,
                 min(
                     maxSize.width / image.size.width,
-                    maxSize.height / image.size.height))
+                    maxSize.height / image.size.height
+                )
+            )
             let winSize = CGSize(
                 width: image.size.width * scale,
-                height: image.size.height * scale)
+                height: image.size.height * scale
+            )
             let origin = CGPoint(
                 x: screen.visibleFrame.midX - winSize.width / 2,
                 y: screen.visibleFrame.midY - winSize.height / 2
@@ -110,7 +116,9 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder _: NSCoder) {
+        fatalError()
+    }
 
     // MARK: Toolbar Setup
 
@@ -122,9 +130,9 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
             onSave: { [weak self] in self?.saveImage() },
             onCopy: { [weak self] in self?.copyImage() }
         )
-        self.toolbarView = tv
+        toolbarView = tv
         let hosting = NSHostingView(rootView: tv)
-        self.toolbarHosting = hosting
+        toolbarHosting = hosting
         toolbarPanel.contentView = hosting
         toolbarPanel.level = NSWindow.Level(rawValue: pinWindow.level.rawValue + 1)
 
@@ -153,7 +161,7 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         toolbarPanel.orderOut(nil)
     }
 
-    func windowWillClose(_ notification: Notification) {
+    func windowWillClose(_: Notification) {
         toolbarPanel.orderOut(nil)
         if let obs = moveObserver {
             NotificationCenter.default.removeObserver(obs)
@@ -201,8 +209,8 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url, let self else { return }
             if let tiff = self.image.tiffRepresentation,
-                let bitmap = NSBitmapImageRep(data: tiff),
-                let png = bitmap.representation(using: .png, properties: [:])
+               let bitmap = NSBitmapImageRep(data: tiff),
+               let png = bitmap.representation(using: .png, properties: [:])
             {
                 try? png.write(to: url)
             }
@@ -221,9 +229,10 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
                 let source = lines.joined(separator: "\n")
                 let targetLang =
                     (NSApp.delegate as? AppDelegate)?.targetLanguage
-                    ?? Locale.Language(identifier: "zh-Hans")
+                        ?? Locale.Language(identifier: "zh-Hans")
                 let translated = try await TranslationManager.shared.translate(
-                    source, to: targetLang)
+                    source, to: targetLang
+                )
                 showResult(text: "原文：\n\(source)\n\n译文：\n\(translated)", title: "翻译结果")
             } catch {
                 showResult(text: "翻译失败：\(error.localizedDescription)", title: "翻译")
@@ -254,7 +263,7 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
             onSave: { [weak self] in self?.saveImage() },
             onCopy: { [weak self] in self?.copyImage() }
         )
-        self.toolbarView = tv
+        toolbarView = tv
         toolbarHosting.rootView = tv
     }
 }
@@ -289,17 +298,21 @@ final class PinImageContainerView: NSView {
     private let hostingView: NSHostingView<PinImageView>
 
     init(image: NSImage) {
-        self.hostingView = NSHostingView(rootView: PinImageView(image: image))
+        hostingView = NSHostingView(rootView: PinImageView(image: image))
         super.init(frame: .zero)
         addSubview(hostingView)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder _: NSCoder) {
+        fatalError()
+    }
 
-    override var mouseDownCanMoveWindow: Bool { true }
+    override var mouseDownCanMoveWindow: Bool {
+        true
+    }
 
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
         true
     }
 
@@ -308,7 +321,7 @@ final class PinImageContainerView: NSView {
         hostingView.frame = bounds
     }
 
-    override func menu(for event: NSEvent) -> NSMenu? {
+    override func menu(for _: NSEvent) -> NSMenu? {
         let menu = NSMenu()
 
         let copyItem = NSMenuItem(title: "复制当前图像", action: #selector(handleCopy), keyEquivalent: "")
@@ -322,7 +335,8 @@ final class PinImageContainerView: NSView {
         menu.addItem(.separator())
 
         let closeItem = NSMenuItem(
-            title: "关闭该贴图", action: #selector(handleClose), keyEquivalent: "")
+            title: "关闭该贴图", action: #selector(handleClose), keyEquivalent: ""
+        )
         closeItem.target = self
         menu.addItem(closeItem)
 

@@ -10,7 +10,6 @@ import Vision
 
 @MainActor
 enum OCRManager {
-
     enum OCRError: Error {
         case noCGImage
     }

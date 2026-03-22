@@ -10,7 +10,6 @@ import ScreenCaptureKit
 
 @MainActor
 enum ScreenCaptureManager {
-
     enum CaptureError: Error {
         case noDisplay
         case captureFailed
@@ -23,10 +22,12 @@ enum ScreenCaptureManager {
         )
 
         // Find the SCDisplay that corresponds to the given NSScreen
-        guard let display = content.displays.first(where: { scDisplay in
-            // SCDisplay.frame is in global screen coordinates (bottom-left origin)
-            scDisplay.frame.intersects(rect)
-        }) else {
+        guard
+            let display = content.displays.first(where: { scDisplay in
+                // SCDisplay.frame is in global screen coordinates (bottom-left origin)
+                scDisplay.frame.intersects(rect)
+            })
+        else {
             throw CaptureError.noDisplay
         }
 
@@ -62,7 +63,8 @@ enum ScreenCaptureManager {
         let content = try await SCShareableContent.excludingDesktopWindows(
             false, onScreenWindowsOnly: true
         )
-        guard let display = content.displays.first(where: { $0.frame.intersects(screen.frame) }) else {
+        guard let display = content.displays.first(where: { $0.frame.intersects(screen.frame) })
+        else {
             throw CaptureError.noDisplay
         }
         let filter = SCContentFilter(display: display, excludingWindows: [])
