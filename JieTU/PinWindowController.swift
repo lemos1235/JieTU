@@ -47,9 +47,9 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
     private static var all: [PinWindowController] = []
 
     private let image: NSImage
-    private let toolbarPanel: PinToolbarPanel
-    private var toolbarHosting: NSHostingView<PinToolbarView>!
-    private var toolbarView: PinToolbarView!
+    private let toolbarPanel: ToolbarPanel
+    private var toolbarHosting: NSHostingView<ToolbarView>!
+    private var toolbarView: ToolbarView!
     private var moveObserver: NSObjectProtocol?
     private var resizeObserver: NSObjectProtocol?
     private var resultPanels: [ResultPanel] = []
@@ -66,7 +66,7 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
 
     init(image: NSImage, initialFrame: CGRect? = nil) {
         self.image = image
-        toolbarPanel = PinToolbarPanel()
+        toolbarPanel = ToolbarPanel()
 
         let windowFrame: CGRect
         if let initialFrame {
@@ -123,7 +123,7 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
     // MARK: Toolbar Setup
 
     private func setupToolbar(pinWindow: PinWindow) {
-        let tv = PinToolbarView(
+        let tv = ToolbarView(
             onClose: { [weak self] in self?.closePin() },
             onPin: nil,
             onTranslate: { [weak self] in self?.performTranslate() },
@@ -256,7 +256,7 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
     private func updateToolbarBusy() {
         // Rebuild toolbar to reset busy spinners
         // SwiftUI state is owned by the view; we signal via a fresh view replacement
-        let tv = PinToolbarView(
+        let tv = ToolbarView(
             onClose: { [weak self] in self?.closePin() },
             onPin: nil,
             onTranslate: { [weak self] in self?.performTranslate() },
@@ -278,15 +278,11 @@ struct PinImageView: View {
         Image(nsImage: image)
             .resizable()
             .aspectRatio(contentMode: .fit)
-            .background(
+            .overlay(
                 Rectangle()
-                    .stroke(pinGlow.opacity(0.9), lineWidth: 2)
-                    .blur(radius: 4)
-                    .shadow(color: pinGlow.opacity(0.55), radius: 12, x: 0, y: 0)
-                    .shadow(color: pinGlow.opacity(0.30), radius: 24, x: 0, y: 0)
-                    .shadow(color: pinGlow.opacity(0.15), radius: 40, x: 0, y: 0)
+                    .stroke(pinGlow, lineWidth: 1)
+                    .shadow(color: pinGlow, radius: 4, x: 0, y: 0)
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

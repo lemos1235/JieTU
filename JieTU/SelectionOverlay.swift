@@ -207,7 +207,7 @@ final class AdjustmentOverlayController {
     private let screen: NSScreen
     private let fullImage: NSImage
     private var resultPanels: [ResultPanel] = []
-    private var toolbarHosting: NSHostingView<PinToolbarView>!
+    private var toolbarHosting: NSHostingView<ToolbarView>!
     private let magnifierView: OverlayMagnifierView
 
     static func show(fullImage: NSImage, initialRect: CGRect?, screen: NSScreen) {
@@ -292,7 +292,7 @@ final class AdjustmentOverlayController {
             return self.toolbarPanel.isVisible && self.toolbarPanel.frame.contains(screenPoint)
         }
 
-        let toolbarView = PinToolbarView(
+        let toolbarView = ToolbarView(
             onClose: { [weak self] in self?.cancel() },
             onPin: { [weak self] in self?.performPin() },
             onTranslate: { [weak self] in self?.performTranslate() },
@@ -321,7 +321,7 @@ final class AdjustmentOverlayController {
         let toolbarW = toolbarHosting.fittingSize.width
         let toolbarH = toolbarHosting.fittingSize.height
         let gap: CGFloat = 8
-        let x = screenOrigin.x + sel.maxX - toolbarW + 4 // compensate PinToolbarView's 4pt shadow padding
+        let x = screenOrigin.x + sel.maxX - toolbarW + 4 // compensate ToolbarView's 4pt shadow padding
         let y = screenOrigin.y + sel.minY - toolbarH - gap
         toolbarPanel.setFrame(
             CGRect(x: x, y: max(screenOrigin.y + 4, y), width: toolbarW, height: toolbarH),
@@ -441,6 +441,7 @@ final class AdjustmentOverlayController {
         let savePanel = NSSavePanel()
         savePanel.allowedContentTypes = [.png]
         savePanel.nameFieldStringValue = "screenshot.png"
+        savePanel.level = NSWindow.Level(rawValue: panel.level.rawValue + 1)
         savePanel.begin { [weak self] response in
             if response == .OK, let url = savePanel.url,
                let tiff = img.tiffRepresentation,

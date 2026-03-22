@@ -13,7 +13,7 @@ import SwiftUI
 
 // MARK: - Toolbar Panel
 
-final class PinToolbarPanel: NSPanel {
+final class ToolbarPanel: NSPanel {
     init() {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 220, height: 44),
@@ -37,7 +37,7 @@ final class PinToolbarPanel: NSPanel {
 
 // MARK: - SwiftUI Toolbar View
 
-struct PinToolbarView: View {
+struct ToolbarView: View {
     let onClose: () -> Void
     let onPin: (() -> Void)?
     let onTranslate: () -> Void
