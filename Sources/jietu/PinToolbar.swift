@@ -4,8 +4,8 @@
 //
 //  Created by Alfred Jobs on 2026/3/21.
 //
-//  A floating toolbar panel that attaches below a PinWindow.
-//  The toolbar contains: close, pin(no-op indicator), OCR, translate, save, copy.
+//  A floating toolbar panel that attaches below the active image surface.
+//  The toolbar contains: close, pin(optional), translate, save, copy.
 //
 
 import AppKit
@@ -36,12 +36,11 @@ final class PinToolbarPanel: NSPanel {
 
 struct PinToolbarView: View {
     let onClose: () -> Void
-    let onOCR: () -> Void
+    let onPin: (() -> Void)?
     let onTranslate: () -> Void
     let onSave: () -> Void
     let onCopy: () -> Void
 
-    @State private var isOCRBusy = false
     @State private var isTranslateBusy = false
 
     var body: some View {
@@ -50,11 +49,13 @@ struct PinToolbarView: View {
                 onClose()
             }
             Divider().frame(height: 20).padding(.horizontal, 2)
-            toolbarButton(icon: "doc.viewfinder", label: "OCR", color: .primary,
-                          busy: isOCRBusy) {
-                isOCRBusy = true
-                onOCR()
+
+            if let onPin {
+                toolbarButton(icon: "pin.fill", label: "固定", color: .primary) {
+                    onPin()
+                }
             }
+
             toolbarButton(icon: "globe", label: "翻译", color: .primary,
                           busy: isTranslateBusy) {
                 isTranslateBusy = true
@@ -79,7 +80,6 @@ struct PinToolbarView: View {
     }
 
     func resetBusy() {
-        isOCRBusy = false
         isTranslateBusy = false
     }
 

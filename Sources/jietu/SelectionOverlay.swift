@@ -270,7 +270,7 @@ final class AdjustmentOverlayController {
 
         let toolbarView = PinToolbarView(
             onClose:     { [weak self] in self?.cancel() },
-            onOCR:       { [weak self] in self?.performOCR() },
+            onPin:       { [weak self] in self?.performPin() },
             onTranslate: { [weak self] in self?.performTranslate() },
             onSave:      { [weak self] in self?.performSave() },
             onCopy:      { [weak self] in self?.performCopy() }
@@ -364,16 +364,17 @@ final class AdjustmentOverlayController {
         return origin
     }
 
-    private func performOCR() {
+    private func performPin() {
         guard let img = cropCurrentSelection() else { return }
-        Task {
-            do {
-                let lines = try await OCRManager.recognize(image: img)
-                let text = lines.isEmpty ? "未识别到文字" : lines.joined(separator: "\n")
-                showResult(text: text, title: "OCR 识别结果")
-            } catch {
-                showResult(text: "OCR 失败：\(error.localizedDescription)", title: "OCR")
-            }
+        let selectionFrame = CGRect(
+            x: screen.frame.origin.x + adjustView.selectionRect.minX,
+            y: screen.frame.origin.y + adjustView.selectionRect.minY,
+            width: adjustView.selectionRect.width,
+            height: adjustView.selectionRect.height
+        )
+        Task { @MainActor [weak self] in
+            PinWindowController.create(image: img, initialFrame: selectionFrame)
+            self?.cancel()
         }
     }
 
@@ -399,16 +400,21 @@ final class AdjustmentOverlayController {
 
     private func performSave() {
         guard let img = cropCurrentSelection() else { return }
+        // Hide overlay panels so the screen unfreezes, but keep self alive
+        magnifierPanel.orderOut(nil)
+        toolbarPanel.orderOut(nil)
+        panel.orderOut(nil)
         let savePanel = NSSavePanel()
         savePanel.allowedContentTypes = [.png]
         savePanel.nameFieldStringValue = "screenshot.png"
-        savePanel.begin { response in
-            guard response == .OK, let url = savePanel.url else { return }
-            if let tiff = img.tiffRepresentation,
+        savePanel.begin { [weak self] response in
+            if response == .OK, let url = savePanel.url,
+               let tiff = img.tiffRepresentation,
                let bitmap = NSBitmapImageRep(data: tiff),
                let png = bitmap.representation(using: .png, properties: [:]) {
                 try? png.write(to: url)
             }
+            self?.cancel()
         }
     }
 
@@ -416,6 +422,7 @@ final class AdjustmentOverlayController {
         guard let img = cropCurrentSelection() else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.writeObjects([img])
+        cancel()
     }
 
     private func showResult(text: String, title: String) {

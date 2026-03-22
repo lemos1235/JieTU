@@ -49,48 +49,61 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
     private var toolbarHosting: NSHostingView<PinToolbarView>!
     private var toolbarView: PinToolbarView!
     private var moveObserver: NSObjectProtocol?
+    private var resizeObserver: NSObjectProtocol?
     private var resultPanels: [ResultPanel] = []
 
     // MARK: Factory
 
-    static func create(image: NSImage) {
-        let ctrl = PinWindowController(image: image)
+    static func create(image: NSImage, initialFrame: CGRect? = nil) {
+        let ctrl = PinWindowController(image: image, initialFrame: initialFrame)
         all.append(ctrl)
         ctrl.showWindow(nil)
     }
 
     // MARK: Init
 
-    init(image: NSImage) {
+    init(image: NSImage, initialFrame: CGRect? = nil) {
         self.image = image
         self.toolbarPanel = PinToolbarPanel()
 
-        // Size pin window to image (max 60% of screen)
-        let screen = NSScreen.main ?? NSScreen.screens[0]
-        let maxSize = CGSize(width: screen.visibleFrame.width * 0.6,
-                             height: screen.visibleFrame.height * 0.6)
-        let scale = min(1.0, min(maxSize.width / image.size.width,
-                                 maxSize.height / image.size.height))
-        let winSize = CGSize(width: image.size.width * scale,
-                             height: image.size.height * scale)
-        let origin = CGPoint(
-            x: screen.visibleFrame.midX - winSize.width / 2,
-            y: screen.visibleFrame.midY - winSize.height / 2
-        )
-        let pinWindow = PinWindow(contentRect: CGRect(origin: origin, size: winSize))
+        let windowFrame: CGRect
+        if let initialFrame {
+            windowFrame = initialFrame
+        } else {
+            // Size pin window to image (max 60% of screen)
+            let screen = NSScreen.main ?? NSScreen.screens[0]
+            let maxSize = CGSize(
+                width: screen.visibleFrame.width * 0.6,
+                height: screen.visibleFrame.height * 0.6)
+            let scale = min(
+                1.0,
+                min(
+                    maxSize.width / image.size.width,
+                    maxSize.height / image.size.height))
+            let winSize = CGSize(
+                width: image.size.width * scale,
+                height: image.size.height * scale)
+            let origin = CGPoint(
+                x: screen.visibleFrame.midX - winSize.width / 2,
+                y: screen.visibleFrame.midY - winSize.height / 2
+            )
+            windowFrame = CGRect(origin: origin, size: winSize)
+        }
+        let pinWindow = PinWindow(contentRect: windowFrame)
+        pinWindow.contentAspectRatio = image.size
         super.init(window: pinWindow)
 
         // Image content
-        let imageView = NSHostingView(rootView: PinImageView(image: image))
+        let imageView = PinImageContainerView(image: image)
+        imageView.onCopy = { [weak self] in self?.copyImage() }
+        imageView.onSave = { [weak self] in self?.saveImage() }
+        imageView.onClose = { [weak self] in self?.closePin() }
         pinWindow.contentView = imageView
         pinWindow.delegate = self
 
-        // Wire drag callbacks for toolbar hide/show
+        // Pin mode keeps only the sticker surface visible.
         pinWindow.onDragBegan = { [weak self] in self?.toolbarPanel.orderOut(nil) }
-        pinWindow.onDragEnded = { [weak self] in
-            self?.repositionToolbar()
-            self?.toolbarPanel.orderFront(nil)
-        }
+        pinWindow.onDragEnded = { [weak self] in self?.toolbarPanel.orderOut(nil) }
 
         // Build toolbar SwiftUI view (capture self weakly)
         setupToolbar(pinWindow: pinWindow)
@@ -103,16 +116,17 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
 
     private func setupToolbar(pinWindow: PinWindow) {
         let tv = PinToolbarView(
-            onClose:     { [weak self] in self?.closePin() },
-            onOCR:       { [weak self] in self?.performOCR() },
+            onClose: { [weak self] in self?.closePin() },
+            onPin: nil,
             onTranslate: { [weak self] in self?.performTranslate() },
-            onSave:      { [weak self] in self?.saveImage() },
-            onCopy:      { [weak self] in self?.copyImage() }
+            onSave: { [weak self] in self?.saveImage() },
+            onCopy: { [weak self] in self?.copyImage() }
         )
         self.toolbarView = tv
         let hosting = NSHostingView(rootView: tv)
         self.toolbarHosting = hosting
         toolbarPanel.contentView = hosting
+        toolbarPanel.level = NSWindow.Level(rawValue: pinWindow.level.rawValue + 1)
 
         // Reposition toolbar when window moves (drag callbacks handle hide/show)
         moveObserver = NotificationCenter.default.addObserver(
@@ -123,7 +137,7 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
             Task { @MainActor [weak self] in self?.repositionToolbar() }
         }
 
-        NotificationCenter.default.addObserver(
+        resizeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didResizeNotification,
             object: pinWindow,
             queue: .main
@@ -136,13 +150,15 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
 
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
-        repositionToolbar()
-        toolbarPanel.orderFront(nil)
+        toolbarPanel.orderOut(nil)
     }
 
     func windowWillClose(_ notification: Notification) {
         toolbarPanel.orderOut(nil)
         if let obs = moveObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
+        if let obs = resizeObserver {
             NotificationCenter.default.removeObserver(obs)
         }
         resultPanels.forEach { $0.orderOut(nil) }
@@ -179,25 +195,16 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         panel.nameFieldStringValue = "screenshot.png"
+        if let win = window {
+            panel.level = NSWindow.Level(rawValue: win.level.rawValue + 1)
+        }
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url, let self else { return }
             if let tiff = self.image.tiffRepresentation,
-               let bitmap = NSBitmapImageRep(data: tiff),
-               let png = bitmap.representation(using: .png, properties: [:]) {
+                let bitmap = NSBitmapImageRep(data: tiff),
+                let png = bitmap.representation(using: .png, properties: [:])
+            {
                 try? png.write(to: url)
-            }
-        }
-    }
-
-    private func performOCR() {
-        Task {
-            defer { updateToolbarBusy() }
-            do {
-                let lines = try await OCRManager.recognize(image: image)
-                let text = lines.isEmpty ? "未识别到文字" : lines.joined(separator: "\n")
-                showResult(text: text, title: "OCR 识别结果")
-            } catch {
-                showResult(text: "OCR 失败：\(error.localizedDescription)", title: "OCR")
             }
         }
     }
@@ -212,9 +219,11 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
                     return
                 }
                 let source = lines.joined(separator: "\n")
-                let targetLang = (NSApp.delegate as? AppDelegate)?.targetLanguage
+                let targetLang =
+                    (NSApp.delegate as? AppDelegate)?.targetLanguage
                     ?? Locale.Language(identifier: "zh-Hans")
-                let translated = try await TranslationManager.shared.translate(source, to: targetLang)
+                let translated = try await TranslationManager.shared.translate(
+                    source, to: targetLang)
                 showResult(text: "原文：\n\(source)\n\n译文：\n\(translated)", title: "翻译结果")
             } catch {
                 showResult(text: "翻译失败：\(error.localizedDescription)", title: "翻译")
@@ -226,6 +235,7 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         let panel = ResultPanel(text: text, title: title)
         // Position result panel to the right of the pin window
         if let win = window {
+            panel.level = NSWindow.Level(rawValue: win.level.rawValue + 1)
             let x = win.frame.maxX + 8
             let y = win.frame.maxY - 200
             panel.setFrameOrigin(CGPoint(x: x, y: y))
@@ -238,11 +248,11 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         // Rebuild toolbar to reset busy spinners
         // SwiftUI state is owned by the view; we signal via a fresh view replacement
         let tv = PinToolbarView(
-            onClose:     { [weak self] in self?.closePin() },
-            onOCR:       { [weak self] in self?.performOCR() },
+            onClose: { [weak self] in self?.closePin() },
+            onPin: nil,
             onTranslate: { [weak self] in self?.performTranslate() },
-            onSave:      { [weak self] in self?.saveImage() },
-            onCopy:      { [weak self] in self?.copyImage() }
+            onSave: { [weak self] in self?.saveImage() },
+            onCopy: { [weak self] in self?.copyImage() }
         )
         self.toolbarView = tv
         toolbarHosting.rootView = tv
@@ -253,57 +263,84 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
 
 struct PinImageView: View {
     let image: NSImage
+    private let pinGlow = Color(red: 0.29, green: 0.58, blue: 1.0)
 
     var body: some View {
         Image(nsImage: image)
             .resizable()
             .aspectRatio(contentMode: .fit)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay(
+            .background(
                 Rectangle()
-                    .strokeBorder(Color.white.opacity(0.6), lineWidth: 1)
+                    .stroke(pinGlow.opacity(0.9), lineWidth: 2)
+                    .blur(radius: 4)
+                    .shadow(color: pinGlow.opacity(0.55), radius: 12, x: 0, y: 0)
+                    .shadow(color: pinGlow.opacity(0.30), radius: 24, x: 0, y: 0)
+                    .shadow(color: pinGlow.opacity(0.15), radius: 40, x: 0, y: 0)
             )
-            .overlay(
-                GeometryReader { geo in
-                    HandlesOverlay(size: geo.size)
-                        .allowsHitTesting(false)
-                }
-                .padding(-3)
-                .allowsHitTesting(false)
-            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
-private struct HandlesOverlay: View {
-    let size: CGSize
-    private let dotSize: CGFloat = 6
-    private let color = Color.white.opacity(0.85)
-    // Padding applied to the overlay container is 3pt (half dot size),
-    // so we offset all positions by +3 to compensate.
-    private let pad: CGFloat = 3
+final class PinImageContainerView: NSView {
+    var onCopy: (() -> Void)?
+    var onSave: (() -> Void)?
+    var onClose: (() -> Void)?
 
-    var body: some View {
-        let w = size.width
-        let h = size.height
-        ZStack {
-            handle(at: CGPoint(x: pad,           y: pad))
-            handle(at: CGPoint(x: w + pad,       y: pad))
-            handle(at: CGPoint(x: pad,           y: h + pad))
-            handle(at: CGPoint(x: w + pad,       y: h + pad))
-            handle(at: CGPoint(x: w / 2 + pad,   y: pad))
-            handle(at: CGPoint(x: w / 2 + pad,   y: h + pad))
-            handle(at: CGPoint(x: pad,           y: h / 2 + pad))
-            handle(at: CGPoint(x: w + pad,       y: h / 2 + pad))
-        }
-        .frame(width: w + pad * 2, height: h + pad * 2)
+    private let hostingView: NSHostingView<PinImageView>
+
+    init(image: NSImage) {
+        self.hostingView = NSHostingView(rootView: PinImageView(image: image))
+        super.init(frame: .zero)
+        addSubview(hostingView)
     }
 
-    @ViewBuilder
-    private func handle(at point: CGPoint) -> some View {
-        Circle()
-            .fill(color)
-            .frame(width: dotSize, height: dotSize)
-            .shadow(color: .black.opacity(0.4), radius: 1, x: 0, y: 1)
-            .position(x: point.x, y: point.y)
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func layout() {
+        super.layout()
+        hostingView.frame = bounds
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = NSMenu()
+
+        let copyItem = NSMenuItem(title: "复制当前图像", action: #selector(handleCopy), keyEquivalent: "")
+        copyItem.target = self
+        menu.addItem(copyItem)
+
+        let saveItem = NSMenuItem(title: "另存为图片", action: #selector(handleSave), keyEquivalent: "")
+        saveItem.target = self
+        menu.addItem(saveItem)
+
+        menu.addItem(.separator())
+
+        let closeItem = NSMenuItem(
+            title: "关闭该贴图", action: #selector(handleClose), keyEquivalent: "")
+        closeItem.target = self
+        menu.addItem(closeItem)
+
+        return menu
+    }
+
+    @objc
+    private func handleCopy() {
+        onCopy?()
+    }
+
+    @objc
+    private func handleSave() {
+        onSave?()
+    }
+
+    @objc
+    private func handleClose() {
+        onClose?()
     }
 }

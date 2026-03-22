@@ -29,7 +29,7 @@ final class PinWindow: NSPanel {
             backing: .buffered,
             defer: false
         )
-        level = .floating
+        level = .statusBar
         isMovableByWindowBackground = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         isOpaque = false
