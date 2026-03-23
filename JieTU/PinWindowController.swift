@@ -8,25 +8,32 @@
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
+import VisionKit
 
 @MainActor
 final class PinWindowController: NSWindowController, NSWindowDelegate {
     private static var all: [PinWindowController] = []
 
     private let image: NSImage
+    private let imageView: PinImageContainerView
 
     // MARK: Factory
 
     static func create(image: NSImage, initialFrame: CGRect? = nil) {
         let ctrl = PinWindowController(image: image, initialFrame: initialFrame)
         all.append(ctrl)
+        NSApp.activate(ignoringOtherApps: true)
         ctrl.showWindow(nil)
+        ctrl.window?.orderFrontRegardless()
+        ctrl.window?.makeKeyAndOrderFront(nil)
+        ctrl.imageView.beginAnalysis()
     }
 
     // MARK: Init
 
     init(image: NSImage, initialFrame: CGRect? = nil) {
         self.image = image
+        imageView = PinImageContainerView(image: image)
 
         let windowFrame: CGRect
         if let initialFrame {
@@ -49,23 +56,23 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
                 width: image.size.width * scale,
                 height: image.size.height * scale
             )
-            let origin = CGPoint(
+            windowFrame = CGRect(
                 x: screen.visibleFrame.midX - winSize.width / 2,
-                y: screen.visibleFrame.midY - winSize.height / 2
+                y: screen.visibleFrame.midY - winSize.height / 2,
+                width: winSize.width,
+                height: winSize.height
             )
-            windowFrame = CGRect(origin: origin, size: winSize)
         }
-        let pinWindow = PinWindow(contentRect: windowFrame)
-        pinWindow.contentAspectRatio = image.size
-        super.init(window: pinWindow)
 
-        // Image content
-        let imageView = PinImageContainerView(image: image)
+        let panel = PinWindow(contentRect: windowFrame)
+        super.init(window: panel)
+
+        panel.delegate = self
+        panel.contentView = imageView
+
         imageView.onCopy = { [weak self] in self?.copyImage() }
         imageView.onSave = { [weak self] in self?.saveImage() }
         imageView.onClose = { [weak self] in self?.closePin() }
-        pinWindow.contentView = imageView
-        pinWindow.delegate = self
     }
 
     @available(*, unavailable)
@@ -73,7 +80,7 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         fatalError()
     }
 
-    // MARK: Window lifecycle
+    // MARK: NSWindowDelegate
 
     func windowWillClose(_: Notification) {
         PinWindowController.all.removeAll { $0 === self }
@@ -107,7 +114,6 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
             }
         }
     }
-
 }
 
 // MARK: - SwiftUI image view
@@ -128,17 +134,39 @@ struct PinImageView: View {
     }
 }
 
-final class PinImageContainerView: NSView {
+final class PinImageContainerView: NSView, ImageAnalysisOverlayViewDelegate {
+    private struct OptionDragState {
+        let initialMouseLocation: CGPoint
+        let initialWindowOrigin: CGPoint
+    }
+
     var onCopy: (() -> Void)?
     var onSave: (() -> Void)?
     var onClose: (() -> Void)?
 
-    private let hostingView: NSHostingView<PinImageView>
+    private let hostingView: PassiveHostingView<PinImageView>
+    private let imageSize: CGSize
+    private let capturedImage: NSImage
+
+    private let analysisOverlay = ImageAnalysisOverlayView()
+    private let analyzer = ImageAnalyzer()
+    private var localEventMonitors: [Any] = []
+    private var optionDragState: OptionDragState?
+    private var selectedTextForMenu: String?
 
     init(image: NSImage) {
-        hostingView = NSHostingView(rootView: PinImageView(image: image))
+        capturedImage = image
+        imageSize = image.size
+        hostingView = PassiveHostingView(rootView: PinImageView(image: image))
         super.init(frame: .zero)
+
+        analysisOverlay.delegate = self
+        analysisOverlay.preferredInteractionTypes = .textSelection
+        analysisOverlay.isSupplementaryInterfaceHidden = true
+        analysisOverlay.setSupplementaryInterfaceHidden(true, animated: false)
+
         addSubview(hostingView)
+        addSubview(analysisOverlay)
     }
 
     @available(*, unavailable)
@@ -146,21 +174,208 @@ final class PinImageContainerView: NSView {
         fatalError()
     }
 
-    override var mouseDownCanMoveWindow: Bool {
-        true
+    deinit {
+        removeEventMonitors()
     }
+
+    // MARK: Analysis
+
+    func beginAnalysis() {
+        let config = ImageAnalyzer.Configuration([.text])
+        let image = capturedImage
+        let overlay = analysisOverlay
+        Task {
+            if let analysis = try? await analyzer.analyze(image, orientation: .up, configuration: config) {
+                overlay.analysis = analysis
+            }
+        }
+    }
+
+    // MARK: Layout
+
+    override var mouseDownCanMoveWindow: Bool { false }
 
     override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
         true
     }
 
+    override func mouseDown(with event: NSEvent) {
+        // Let the Live Text overlay handle text interactions;
+        // fall back to window drag when clicking outside text or with Option held.
+        if event.modifierFlags.contains(.option) {
+            beginOptionDrag(with: event)
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
     override func layout() {
         super.layout()
         hostingView.frame = bounds
+        analysisOverlay.frame = aspectFitRect(for: imageSize, in: bounds)
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            removeEventMonitors()
+        } else {
+            installEventMonitorsIfNeeded()
+        }
+    }
+
+    private func aspectFitRect(for imageSize: CGSize, in bounds: CGRect) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0,
+              bounds.width > 0, bounds.height > 0 else { return bounds }
+        let scale = min(bounds.width / imageSize.width, bounds.height / imageSize.height)
+        let fittedSize = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        return CGRect(
+            x: bounds.midX - fittedSize.width / 2,
+            y: bounds.midY - fittedSize.height / 2,
+            width: fittedSize.width,
+            height: fittedSize.height
+        )
+    }
+
+    // MARK: Context menu
+
     override func menu(for _: NSEvent) -> NSMenu? {
+        makeContextMenu()
+    }
+
+    private func showContextMenu(with event: NSEvent) {
+        let selectedText = analysisOverlay.hasActiveTextSelection ? analysisOverlay.selectedText : ""
+        selectedTextForMenu = selectedText.isEmpty ? nil : selectedText
+        analysisOverlay.setSupplementaryInterfaceHidden(true, animated: false)
+        let menu = makeContextMenu()
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    func contentView(for _: ImageAnalysisOverlayView) -> NSView? {
+        hostingView
+    }
+
+    func overlayView(_: ImageAnalysisOverlayView, shouldShowMenuForEvent _: NSEvent, atPoint _: CGPoint) -> Bool {
+        false
+    }
+
+    func overlayView(_: ImageAnalysisOverlayView, updatedMenuFor _: NSMenu, for _: NSEvent, at _: CGPoint) -> NSMenu {
+        return NSMenu()
+    }
+
+    func textSelectionDidChange(_ overlayView: ImageAnalysisOverlayView) {
+        overlayView.setSupplementaryInterfaceHidden(true, animated: false)
+    }
+
+    private func installEventMonitorsIfNeeded() {
+        guard localEventMonitors.isEmpty else { return }
+
+        if let monitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown],
+            handler: { [weak self] event in self?.handleLocalLeftMouseDown(event) ?? event }
+        ) { localEventMonitors.append(monitor) }
+
+        if let monitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDragged],
+            handler: { [weak self] event in self?.handleLocalLeftMouseDragged(event) ?? event }
+        ) { localEventMonitors.append(monitor) }
+
+        if let monitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseUp],
+            handler: { [weak self] event in self?.handleLocalLeftMouseUp(event) ?? event }
+        ) { localEventMonitors.append(monitor) }
+
+        if let monitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.rightMouseDown],
+            handler: { [weak self] event in self?.handleLocalRightMouseDown(event) ?? event }
+        ) { localEventMonitors.append(monitor) }
+    }
+
+    private func removeEventMonitors() {
+        for monitor in localEventMonitors {
+            NSEvent.removeMonitor(monitor)
+        }
+        localEventMonitors.removeAll()
+        optionDragState = nil
+    }
+
+    private func handleLocalLeftMouseDown(_ event: NSEvent) -> NSEvent? {
+        guard shouldHandleLocalMouseEvent(event) else { return event }
+
+        if event.modifierFlags.contains(.option) {
+            beginOptionDrag(with: event)
+            return nil
+        }
+
+        if event.modifierFlags.contains(.control) {
+            showContextMenu(with: event)
+            return nil
+        }
+
+        return event
+    }
+
+    private func handleLocalLeftMouseDragged(_ event: NSEvent) -> NSEvent? {
+        guard optionDragState != nil else { return event }
+        updateOptionDrag(with: event)
+        return nil
+    }
+
+    private func handleLocalLeftMouseUp(_ event: NSEvent) -> NSEvent? {
+        guard optionDragState != nil else { return event }
+        endOptionDrag()
+        return nil
+    }
+
+    private func handleLocalRightMouseDown(_ event: NSEvent) -> NSEvent? {
+        guard shouldHandleLocalMouseEvent(event) else { return event }
+        showContextMenu(with: event)
+        return nil
+    }
+
+    private func shouldHandleLocalMouseEvent(_ event: NSEvent) -> Bool {
+        guard let window, event.window === window else { return false }
+        let point = convert(event.locationInWindow, from: nil)
+        return bounds.contains(point)
+    }
+
+    private func beginOptionDrag(with _: NSEvent) {
+        guard let window else { return }
+        optionDragState = OptionDragState(
+            initialMouseLocation: NSEvent.mouseLocation,
+            initialWindowOrigin: window.frame.origin
+        )
+    }
+
+    private func updateOptionDrag(with _: NSEvent) {
+        guard let window, let optionDragState else { return }
+        let currentMouseLocation = NSEvent.mouseLocation
+        let deltaX = currentMouseLocation.x - optionDragState.initialMouseLocation.x
+        let deltaY = currentMouseLocation.y - optionDragState.initialMouseLocation.y
+        let newOrigin = CGPoint(
+            x: optionDragState.initialWindowOrigin.x + deltaX,
+            y: optionDragState.initialWindowOrigin.y + deltaY
+        )
+        window.setFrameOrigin(newOrigin)
+    }
+
+    private func endOptionDrag() {
+        optionDragState = nil
+    }
+
+    private func makeContextMenu() -> NSMenu {
         let menu = NSMenu()
+
+        if selectedTextForMenu != nil {
+            let copySelectedTextItem = NSMenuItem(
+                title: "复制选中文本",
+                action: #selector(handleCopySelectedText),
+                keyEquivalent: ""
+            )
+            copySelectedTextItem.target = self
+            menu.addItem(copySelectedTextItem)
+            menu.addItem(.separator())
+        }
 
         let copyItem = NSMenuItem(title: "复制当前图像", action: #selector(handleCopy), keyEquivalent: "")
         copyItem.target = self
@@ -172,9 +387,7 @@ final class PinImageContainerView: NSView {
 
         menu.addItem(.separator())
 
-        let closeItem = NSMenuItem(
-            title: "关闭该贴图", action: #selector(handleClose), keyEquivalent: ""
-        )
+        let closeItem = NSMenuItem(title: "关闭该贴图", action: #selector(handleClose), keyEquivalent: "")
         closeItem.target = self
         menu.addItem(closeItem)
 
@@ -187,6 +400,14 @@ final class PinImageContainerView: NSView {
     }
 
     @objc
+    private func handleCopySelectedText() {
+        guard let text = selectedTextForMenu else { return }
+        selectedTextForMenu = nil
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    @objc
     private func handleSave() {
         onSave?()
     }
@@ -194,5 +415,11 @@ final class PinImageContainerView: NSView {
     @objc
     private func handleClose() {
         onClose?()
+    }
+}
+
+final class PassiveHostingView<Content: View>: NSHostingView<Content> {
+    override func hitTest(_: NSPoint) -> NSView? {
+        nil
     }
 }

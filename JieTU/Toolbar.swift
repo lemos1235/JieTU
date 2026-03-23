@@ -53,19 +53,21 @@ struct ToolbarView: View {
             }
             Divider().frame(height: 20).padding(.horizontal, 2)
 
+            // Only render the Pin button when a handler was provided.
             if let onPin {
                 toolbarButton(icon: "pin.fill", label: "固定", color: .primary) {
                     onPin()
                 }
             }
 
-            toolbarButton(
-                icon: "globe", label: "翻译", color: .primary,
-                busy: isTranslateBusy
-            ) {
-                isTranslateBusy = true
-                onTranslate()
-            }
+            // toolbarButton(
+            //     icon: "globe", label: "翻译", color: .primary,
+            //     busy: isTranslateBusy
+            // ) {
+            //     isTranslateBusy = true
+            //     onTranslate()
+            // }
+
             Divider().frame(height: 20).padding(.horizontal, 2)
             toolbarButton(icon: "square.and.arrow.down", label: "保存", color: .primary) {
                 onSave()

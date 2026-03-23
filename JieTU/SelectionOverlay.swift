@@ -400,9 +400,9 @@ final class AdjustmentOverlayController {
             width: adjustView.selectionRect.width,
             height: adjustView.selectionRect.height
         )
-        Task { @MainActor [weak self] in
+        cancel()
+        DispatchQueue.main.async {
             PinWindowController.create(image: img, initialFrame: selectionFrame)
-            self?.cancel()
         }
     }
 
