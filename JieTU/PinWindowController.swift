@@ -135,7 +135,7 @@ struct PinImageView: View {
 }
 
 final class PinImageContainerView: NSView, ImageAnalysisOverlayViewDelegate {
-    private struct OptionDragState {
+    private struct WindowDragState {
         let initialMouseLocation: CGPoint
         let initialWindowOrigin: CGPoint
     }
@@ -149,9 +149,8 @@ final class PinImageContainerView: NSView, ImageAnalysisOverlayViewDelegate {
     private let capturedImage: NSImage
 
     private let analysisOverlay = ImageAnalysisOverlayView()
-    private let analyzer = ImageAnalyzer()
     private var localEventMonitors: [Any] = []
-    private var optionDragState: OptionDragState?
+    private var activeWindowDragState: WindowDragState?
     private var selectedTextForMenu: String?
 
     init(image: NSImage) {
@@ -184,9 +183,9 @@ final class PinImageContainerView: NSView, ImageAnalysisOverlayViewDelegate {
         let config = ImageAnalyzer.Configuration([.text])
         let image = capturedImage
         let overlay = analysisOverlay
-        Task {
-            if let analysis = try? await analyzer.analyze(image, orientation: .up, configuration: config) {
-                overlay.analysis = analysis
+        Task.detached(priority: .userInitiated) {
+            if let analysis = try? await ImageAnalyzer().analyze(image, orientation: .up, configuration: config) {
+                await MainActor.run { overlay.analysis = analysis }
             }
         }
     }
@@ -200,12 +199,7 @@ final class PinImageContainerView: NSView, ImageAnalysisOverlayViewDelegate {
     }
 
     override func mouseDown(with event: NSEvent) {
-        // Let the Live Text overlay handle text interactions;
-        // fall back to window drag when clicking outside text or with Option held.
-        if event.modifierFlags.contains(.option) {
-            beginOptionDrag(with: event)
-            return
-        }
+        // Let the Live Text overlay handle regular text interactions.
         super.mouseDown(with: event)
     }
 
@@ -244,6 +238,7 @@ final class PinImageContainerView: NSView, ImageAnalysisOverlayViewDelegate {
     }
 
     private func showContextMenu(with event: NSEvent) {
+        endWindowDrag()
         let selectedText = analysisOverlay.hasActiveTextSelection ? analysisOverlay.selectedText : ""
         selectedTextForMenu = selectedText.isEmpty ? nil : selectedText
         analysisOverlay.setSupplementaryInterfaceHidden(true, animated: false)
@@ -289,6 +284,21 @@ final class PinImageContainerView: NSView, ImageAnalysisOverlayViewDelegate {
             matching: [.rightMouseDown],
             handler: { [weak self] event in self?.handleLocalRightMouseDown(event) ?? event }
         ) { localEventMonitors.append(monitor) }
+
+        if let monitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.otherMouseDown],
+            handler: { [weak self] event in self?.handleLocalOtherMouseDown(event) ?? event }
+        ) { localEventMonitors.append(monitor) }
+
+        if let monitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.otherMouseDragged],
+            handler: { [weak self] event in self?.handleLocalOtherMouseDragged(event) ?? event }
+        ) { localEventMonitors.append(monitor) }
+
+        if let monitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.otherMouseUp],
+            handler: { [weak self] event in self?.handleLocalOtherMouseUp(event) ?? event }
+        ) { localEventMonitors.append(monitor) }
     }
 
     private func removeEventMonitors() {
@@ -296,14 +306,14 @@ final class PinImageContainerView: NSView, ImageAnalysisOverlayViewDelegate {
             NSEvent.removeMonitor(monitor)
         }
         localEventMonitors.removeAll()
-        optionDragState = nil
+        activeWindowDragState = nil
     }
 
     private func handleLocalLeftMouseDown(_ event: NSEvent) -> NSEvent? {
         guard shouldHandleLocalMouseEvent(event) else { return event }
 
         if event.modifierFlags.contains(.option) {
-            beginOptionDrag(with: event)
+            beginWindowDrag(with: event)
             return nil
         }
 
@@ -311,25 +321,44 @@ final class PinImageContainerView: NSView, ImageAnalysisOverlayViewDelegate {
             showContextMenu(with: event)
             return nil
         }
-
         return event
     }
 
     private func handleLocalLeftMouseDragged(_ event: NSEvent) -> NSEvent? {
-        guard optionDragState != nil else { return event }
-        updateOptionDrag(with: event)
+        guard activeWindowDragState != nil else { return event }
+        updateWindowDrag(with: event)
         return nil
     }
 
     private func handleLocalLeftMouseUp(_ event: NSEvent) -> NSEvent? {
-        guard optionDragState != nil else { return event }
-        endOptionDrag()
-        return nil
+        if activeWindowDragState != nil {
+            endWindowDrag()
+            return nil
+        }
+        return event
     }
 
     private func handleLocalRightMouseDown(_ event: NSEvent) -> NSEvent? {
         guard shouldHandleLocalMouseEvent(event) else { return event }
         showContextMenu(with: event)
+        return nil
+    }
+
+    private func handleLocalOtherMouseDown(_ event: NSEvent) -> NSEvent? {
+        guard event.buttonNumber == 2, shouldHandleLocalMouseEvent(event) else { return event }
+        beginWindowDrag(with: event)
+        return nil
+    }
+
+    private func handleLocalOtherMouseDragged(_ event: NSEvent) -> NSEvent? {
+        guard event.buttonNumber == 2, activeWindowDragState != nil else { return event }
+        updateWindowDrag(with: event)
+        return nil
+    }
+
+    private func handleLocalOtherMouseUp(_ event: NSEvent) -> NSEvent? {
+        guard event.buttonNumber == 2, activeWindowDragState != nil else { return event }
+        endWindowDrag()
         return nil
     }
 
@@ -339,28 +368,32 @@ final class PinImageContainerView: NSView, ImageAnalysisOverlayViewDelegate {
         return bounds.contains(point)
     }
 
-    private func beginOptionDrag(with _: NSEvent) {
-        guard let window else { return }
-        optionDragState = OptionDragState(
+    private func makeWindowDragState() -> WindowDragState? {
+        guard let window else { return nil }
+        return WindowDragState(
             initialMouseLocation: NSEvent.mouseLocation,
             initialWindowOrigin: window.frame.origin
         )
     }
 
-    private func updateOptionDrag(with _: NSEvent) {
-        guard let window, let optionDragState else { return }
+    private func beginWindowDrag(with _: NSEvent) {
+        activeWindowDragState = makeWindowDragState()
+    }
+
+    private func updateWindowDrag(with _: NSEvent) {
+        guard let window, let activeWindowDragState else { return }
         let currentMouseLocation = NSEvent.mouseLocation
-        let deltaX = currentMouseLocation.x - optionDragState.initialMouseLocation.x
-        let deltaY = currentMouseLocation.y - optionDragState.initialMouseLocation.y
+        let deltaX = currentMouseLocation.x - activeWindowDragState.initialMouseLocation.x
+        let deltaY = currentMouseLocation.y - activeWindowDragState.initialMouseLocation.y
         let newOrigin = CGPoint(
-            x: optionDragState.initialWindowOrigin.x + deltaX,
-            y: optionDragState.initialWindowOrigin.y + deltaY
+            x: activeWindowDragState.initialWindowOrigin.x + deltaX,
+            y: activeWindowDragState.initialWindowOrigin.y + deltaY
         )
         window.setFrameOrigin(newOrigin)
     }
 
-    private func endOptionDrag() {
-        optionDragState = nil
+    private func endWindowDrag() {
+        activeWindowDragState = nil
     }
 
     private func makeContextMenu() -> NSMenu {
