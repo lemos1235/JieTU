@@ -206,7 +206,6 @@ final class AdjustmentOverlayController {
     private let adjustView: AdjustmentOverlayView
     private let screen: NSScreen
     private let fullImage: NSImage
-    private var resultPanels: [ResultPanel] = []
     private var toolbarHosting: NSHostingView<ToolbarView>!
     private let magnifierView: OverlayMagnifierView
 
@@ -354,8 +353,6 @@ final class AdjustmentOverlayController {
     // MARK: - Actions
 
     private func cancel() {
-        resultPanels.forEach { $0.close() }
-        resultPanels = []
         magnifierPanel.orderOut(nil)
         toolbarPanel.orderOut(nil)
         panel.orderOut(nil)
@@ -410,26 +407,7 @@ final class AdjustmentOverlayController {
     }
 
     private func performTranslate() {
-        guard let img = cropCurrentSelection() else { return }
-        Task {
-            do {
-                let lines = try await OCRManager.recognize(image: img)
-                guard !lines.isEmpty else {
-                    showResult(text: "未识别到可翻译的文字", title: "翻译")
-                    return
-                }
-                let source = lines.joined(separator: "\n")
-                let targetLang =
-                    (NSApp.delegate as? AppDelegate)?.targetLanguage
-                        ?? Locale.Language(identifier: "zh-Hans")
-                let translated = try await TranslationManager.shared.translate(
-                    source, to: targetLang
-                )
-                showResult(text: "原文：\n\(source)\n\n译文：\n\(translated)", title: "翻译结果")
-            } catch {
-                showResult(text: "翻译失败：\(error.localizedDescription)", title: "翻译")
-            }
-        }
+        // TODO 翻译
     }
 
     private func performSave() {
@@ -459,15 +437,6 @@ final class AdjustmentOverlayController {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.writeObjects([img])
         cancel()
-    }
-
-    private func showResult(text: String, title: String) {
-        let rp = ResultPanel(text: text, title: title)
-        let x = screen.frame.maxX - 340
-        let y = screen.frame.midY - 100
-        rp.setFrameOrigin(CGPoint(x: x, y: y))
-        resultPanels.append(rp)
-        rp.makeKeyAndOrderFront(nil)
     }
 }
 

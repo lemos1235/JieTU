@@ -9,50 +9,11 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - Result Panel
-
-/// A lightweight floating panel that shows OCR / translation text results.
-final class ResultPanel: NSPanel {
-    init(text: String, title: String) {
-        super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 200),
-            styleMask: [.titled, .closable, .resizable, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        self.title = title
-        level = .floating
-        isReleasedWhenClosed = false
-        collectionBehavior = [.canJoinAllSpaces]
-        let textView = NSTextView()
-        textView.string = text
-        textView.isEditable = false
-        textView.font = .systemFont(ofSize: 13)
-        textView.textContainerInset = NSSize(width: 8, height: 8)
-        let scroll = NSScrollView()
-        scroll.documentView = textView
-        scroll.hasVerticalScroller = true
-        contentView = scroll
-    }
-
-    override var canBecomeKey: Bool {
-        true
-    }
-}
-
-// MARK: - Controller
-
 @MainActor
 final class PinWindowController: NSWindowController, NSWindowDelegate {
     private static var all: [PinWindowController] = []
 
     private let image: NSImage
-    private let toolbarPanel: ToolbarPanel
-    private var toolbarHosting: NSHostingView<ToolbarView>!
-    private var toolbarView: ToolbarView!
-    private var moveObserver: NSObjectProtocol?
-    private var resizeObserver: NSObjectProtocol?
-    private var resultPanels: [ResultPanel] = []
 
     // MARK: Factory
 
@@ -66,7 +27,6 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
 
     init(image: NSImage, initialFrame: CGRect? = nil) {
         self.image = image
-        toolbarPanel = ToolbarPanel()
 
         let windowFrame: CGRect
         if let initialFrame {
@@ -106,13 +66,6 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         imageView.onClose = { [weak self] in self?.closePin() }
         pinWindow.contentView = imageView
         pinWindow.delegate = self
-
-        // Pin mode keeps only the sticker surface visible.
-        pinWindow.onDragBegan = { [weak self] in self?.toolbarPanel.orderOut(nil) }
-        pinWindow.onDragEnded = { [weak self] in self?.toolbarPanel.orderOut(nil) }
-
-        // Build toolbar SwiftUI view (capture self weakly)
-        setupToolbar(pinWindow: pinWindow)
     }
 
     @available(*, unavailable)
@@ -120,75 +73,13 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         fatalError()
     }
 
-    // MARK: Toolbar Setup
-
-    private func setupToolbar(pinWindow: PinWindow) {
-        let tv = ToolbarView(
-            onClose: { [weak self] in self?.closePin() },
-            onPin: nil,
-            onTranslate: { [weak self] in self?.performTranslate() },
-            onSave: { [weak self] in self?.saveImage() },
-            onCopy: { [weak self] in self?.copyImage() }
-        )
-        toolbarView = tv
-        let hosting = NSHostingView(rootView: tv)
-        toolbarHosting = hosting
-        toolbarPanel.contentView = hosting
-        toolbarPanel.level = NSWindow.Level(rawValue: pinWindow.level.rawValue + 1)
-
-        // Reposition toolbar when window moves (drag callbacks handle hide/show)
-        moveObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didMoveNotification,
-            object: pinWindow,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.repositionToolbar() }
-        }
-
-        resizeObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didResizeNotification,
-            object: pinWindow,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.repositionToolbar() }
-        }
-    }
-
     // MARK: Window lifecycle
 
-    override func showWindow(_ sender: Any?) {
-        super.showWindow(sender)
-        toolbarPanel.orderOut(nil)
-    }
-
     func windowWillClose(_: Notification) {
-        toolbarPanel.orderOut(nil)
-        if let obs = moveObserver {
-            NotificationCenter.default.removeObserver(obs)
-        }
-        if let obs = resizeObserver {
-            NotificationCenter.default.removeObserver(obs)
-        }
-        resultPanels.forEach { $0.orderOut(nil) }
         PinWindowController.all.removeAll { $0 === self }
     }
 
-    // MARK: Toolbar positioning
-
-    private func repositionToolbar() {
-        guard let win = window else { return }
-        let toolbarWidth = max(220, min(win.frame.width, 440))
-        let toolbarHeight: CGFloat = 52
-        let winFrame = win.frame
-        let x = winFrame.midX - toolbarWidth / 2
-        let y = winFrame.minY - toolbarHeight - 6
-        toolbarPanel.setFrame(
-            CGRect(x: x, y: y, width: toolbarWidth, height: toolbarHeight),
-            display: true
-        )
-    }
-
-    // MARK: - Toolbar Actions
+    // MARK: - Actions
 
     private func closePin() {
         window?.close()
@@ -217,55 +108,6 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    private func performTranslate() {
-        Task {
-            defer { updateToolbarBusy() }
-            do {
-                let lines = try await OCRManager.recognize(image: image)
-                guard !lines.isEmpty else {
-                    showResult(text: "未识别到可翻译的文字", title: "翻译")
-                    return
-                }
-                let source = lines.joined(separator: "\n")
-                let targetLang =
-                    (NSApp.delegate as? AppDelegate)?.targetLanguage
-                        ?? Locale.Language(identifier: "zh-Hans")
-                let translated = try await TranslationManager.shared.translate(
-                    source, to: targetLang
-                )
-                showResult(text: "原文：\n\(source)\n\n译文：\n\(translated)", title: "翻译结果")
-            } catch {
-                showResult(text: "翻译失败：\(error.localizedDescription)", title: "翻译")
-            }
-        }
-    }
-
-    private func showResult(text: String, title: String) {
-        let panel = ResultPanel(text: text, title: title)
-        // Position result panel to the right of the pin window
-        if let win = window {
-            panel.level = NSWindow.Level(rawValue: win.level.rawValue + 1)
-            let x = win.frame.maxX + 8
-            let y = win.frame.maxY - 200
-            panel.setFrameOrigin(CGPoint(x: x, y: y))
-        }
-        resultPanels.append(panel)
-        panel.makeKeyAndOrderFront(nil)
-    }
-
-    private func updateToolbarBusy() {
-        // Rebuild toolbar to reset busy spinners
-        // SwiftUI state is owned by the view; we signal via a fresh view replacement
-        let tv = ToolbarView(
-            onClose: { [weak self] in self?.closePin() },
-            onPin: nil,
-            onTranslate: { [weak self] in self?.performTranslate() },
-            onSave: { [weak self] in self?.saveImage() },
-            onCopy: { [weak self] in self?.copyImage() }
-        )
-        toolbarView = tv
-        toolbarHosting.rootView = tv
-    }
 }
 
 // MARK: - SwiftUI image view
