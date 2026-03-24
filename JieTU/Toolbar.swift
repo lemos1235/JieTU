@@ -9,6 +9,7 @@
 //
 
 import AppKit
+import Combine
 import SwiftUI
 
 // MARK: - Toolbar Panel
@@ -16,7 +17,7 @@ import SwiftUI
 final class ToolbarPanel: NSPanel {
     init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 220, height: 44),
+            contentRect: NSRect(x: 0, y: 0, width: 276, height: 44),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -35,14 +36,29 @@ final class ToolbarPanel: NSPanel {
     }
 }
 
+// MARK: - Toolbar state model
+
+@MainActor
+final class ToolbarModel: ObservableObject {
+    @Published var showPin: Bool
+    @Published var showOCR: Bool
+
+    init(showPin: Bool, showOCR: Bool) {
+        self.showPin = showPin
+        self.showOCR = showOCR
+    }
+}
+
 // MARK: - SwiftUI Toolbar View
 
 struct ToolbarView: View {
     let onClose: () -> Void
     let onPin: (() -> Void)?
+    let onOCR: (() -> Void)?
     let onTranslate: () -> Void
     let onSave: () -> Void
     let onCopy: () -> Void
+    @ObservedObject var model: ToolbarModel
 
     @State private var isTranslateBusy = false
 
@@ -54,9 +70,15 @@ struct ToolbarView: View {
             Divider().frame(height: 20).padding(.horizontal, 2)
 
             // Only render the Pin button when a handler was provided.
-            if let onPin {
+            if model.showPin, let onPin {
                 toolbarButton(icon: "pin.fill", label: "固定", color: .primary) {
                     onPin()
+                }
+            }
+
+            if model.showOCR, let onOCR {
+                toolbarButton(icon: "text.viewfinder", label: "OCR", color: .primary) {
+                    onOCR()
                 }
             }
 
