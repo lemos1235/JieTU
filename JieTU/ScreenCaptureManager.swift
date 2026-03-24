@@ -49,6 +49,7 @@ enum ScreenCaptureManager {
         config.showsCursor = false
         config.capturesShadowsOnly = false
         config.shouldBeOpaque = true
+        config.colorSpaceName = CGColorSpace.sRGB
 
         let cgImage = try await SCScreenshotManager.captureImage(
             contentFilter: filter,
@@ -75,6 +76,7 @@ enum ScreenCaptureManager {
         config.showsCursor = false
         config.capturesShadowsOnly = false
         config.shouldBeOpaque = true
+        config.colorSpaceName = CGColorSpace.sRGB
         let cgImage = try await SCScreenshotManager.captureImage(
             contentFilter: filter,
             configuration: config
