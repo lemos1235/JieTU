@@ -55,12 +55,9 @@ struct ToolbarView: View {
     let onClose: () -> Void
     let onPin: (() -> Void)?
     let onOCR: (() -> Void)?
-    let onTranslate: () -> Void
     let onSave: () -> Void
     let onCopy: () -> Void
     @ObservedObject var model: ToolbarModel
-
-    @State private var isTranslateBusy = false
 
     var body: some View {
         HStack(spacing: 2) {
@@ -82,14 +79,6 @@ struct ToolbarView: View {
                 }
             }
 
-            // toolbarButton(
-            //     icon: "globe", label: "翻译", color: .primary,
-            //     busy: isTranslateBusy
-            // ) {
-            //     isTranslateBusy = true
-            //     onTranslate()
-            // }
-
             Divider().frame(height: 20).padding(.horizontal, 2)
             toolbarButton(icon: "square.and.arrow.down", label: "保存", color: .primary) {
                 onSave()
@@ -106,10 +95,6 @@ struct ToolbarView: View {
                 .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
         )
         .padding(4) // so shadow isn't clipped
-    }
-
-    func resetBusy() {
-        isTranslateBusy = false
     }
 
     private func toolbarButton(

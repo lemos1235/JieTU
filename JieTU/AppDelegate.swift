@@ -10,16 +10,15 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
-    var targetLanguage: Locale.Language = .init(identifier: "zh-Hans")
 
     func applicationDidFinishLaunching(_: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(
-            systemSymbolName: "camera.viewfinder",
-            accessibilityDescription: "截图"
-        )
+        if let icon = NSImage(named: "MenuBarIcon") {
+            icon.isTemplate = true
+            statusItem.button?.image = icon
+        }
         rebuildMenu()
 
         ScreenPermission.requestIfNeeded()
@@ -43,12 +42,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             }
         }
-    }
-
-    @objc func setTargetLanguage(_ sender: NSMenuItem) {
-        guard let identifier = sender.representedObject as? String else { return }
-        targetLanguage = Locale.Language(identifier: identifier)
-        rebuildMenu()
     }
 
     @objc func quit() {

@@ -321,7 +321,6 @@ final class AdjustmentOverlayController {
             onClose: { [weak self] in self?.cancel() },
             onPin: { [weak self] in self?.performPin() },
             onOCR: { [weak self] in self?.performOCR() },
-            onTranslate: { [weak self] in self?.performTranslate() },
             onSave: { [weak self] in self?.performSave() },
             onCopy: { [weak self] in self?.performCopy() },
             model: model
@@ -435,10 +434,6 @@ final class AdjustmentOverlayController {
         repositionToolbar()
         toolbarPanel.orderFront(nil)
         panel.invalidateCursorRects(for: adjustView)
-    }
-
-    private func performTranslate() {
-        // TODO 翻译
     }
 
     private func performSave() {
