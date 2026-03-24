@@ -283,8 +283,12 @@ final class AdjustmentOverlayController {
         adjustView.onDragBegan = { [weak self] in self?.toolbarPanel.orderOut(nil) }
         adjustView.onDragEnded = { [weak self] in
             self?.refreshToolbar()
-            self?.repositionToolbar()
-            self?.toolbarPanel.orderFront(nil)
+            // Defer one runloop so SwiftUI completes its first layout pass
+            // and fittingSize is accurate before we position the panel.
+            DispatchQueue.main.async {
+                self?.repositionToolbar()
+                self?.toolbarPanel.orderFront(nil)
+            }
         }
         adjustView.onSelectionChanged = { [weak self] in self?.repositionToolbar() }
         adjustView.onMagnifierChanged = { [weak self] snapshot in self?.updateMagnifier(snapshot) }
