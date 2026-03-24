@@ -73,8 +73,17 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
     let hostingView: PassiveHostingView<CapturedImageView>
     let analysisOverlay = ImageAnalysisOverlayView()
 
+    var onCopy: (() -> Void)?
+    var onSave: (() -> Void)?
+    var onClose: (() -> Void)?
+
     private let imageSize: CGSize
     private let capturedImage: NSImage
+
+    // Drag state for middle-button and Option+left drag
+    private var dragStartWindowOrigin: CGPoint = .zero
+    private var dragStartMouseScreen: CGPoint = .zero
+    private var isDragging = false
 
     init(image: NSImage, showsBorder: Bool = false) {
         capturedImage = image
@@ -116,11 +125,117 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
         for _: NSEvent,
         at _: CGPoint
     ) -> NSMenu {
-        NSMenu()
+        let menu = NSMenu()
+
+        let selectedText = overlayView.selectedText
+        if !selectedText.isEmpty {
+            let copyTextItem = NSMenuItem(
+                title: "复制当前已选文字",
+                action: #selector(handleCopySelectedText),
+                keyEquivalent: ""
+            )
+            copyTextItem.target = self
+            menu.addItem(copyTextItem)
+            menu.addItem(.separator())
+        }
+
+        let copyItem = NSMenuItem(title: "复制当前图像", action: #selector(handleCopy), keyEquivalent: "")
+        copyItem.target = self
+        menu.addItem(copyItem)
+
+        let saveItem = NSMenuItem(title: "另存为图片", action: #selector(handleSave), keyEquivalent: "")
+        saveItem.target = self
+        menu.addItem(saveItem)
+
+        menu.addItem(.separator())
+
+        let closeItem = NSMenuItem(title: "关闭该贴图", action: #selector(handleClose), keyEquivalent: "")
+        closeItem.target = self
+        menu.addItem(closeItem)
+
+        return menu
     }
 
     func textSelectionDidChange(_ overlayView: ImageAnalysisOverlayView) {
         overlayView.setSupplementaryInterfaceHidden(true, animated: false)
+    }
+
+    @objc private func handleCopySelectedText() {
+        let text = analysisOverlay.selectedText
+        guard !text.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    @objc private func handleCopy() { onCopy?() }
+    @objc private func handleSave() { onSave?() }
+    @objc private func handleClose() { onClose?() }
+
+    // MARK: - Drag to move (middle-button or Option+left)
+    // ImageAnalysisOverlayView sits on top and consumes mouse events, so we use a
+    // local NSEvent monitor at the window level to intercept drag gestures first.
+
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    private var eventMonitor: Any?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+        }
+        guard window != nil else { return }
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .leftMouseDragged, .leftMouseUp,
+                                           .otherMouseDown, .otherMouseDragged, .otherMouseUp]
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            guard let self, event.window === self.window else { return event }
+            return self.handleLocalEvent(event)
+        }
+    }
+
+    private func handleLocalEvent(_ event: NSEvent) -> NSEvent? {
+        switch event.type {
+        case .leftMouseDown where event.modifierFlags.contains(.option):
+            beginDrag(event: event)
+            return nil  // consume; don't pass to overlay
+        case .leftMouseDragged:
+            if isDragging { continueDrag(); return nil }
+        case .leftMouseUp:
+            if isDragging { endDrag(); return nil }
+        case .otherMouseDown where event.buttonNumber == 2:
+            beginDrag(event: event)
+            return nil
+        case .otherMouseDragged:
+            if isDragging { continueDrag(); return nil }
+        case .otherMouseUp:
+            if isDragging { endDrag(); return nil }
+        default:
+            break
+        }
+        return event
+    }
+
+    private func beginDrag(event: NSEvent) {
+        guard let win = window else { return }
+        isDragging = true
+        dragStartWindowOrigin = win.frame.origin
+        dragStartMouseScreen = NSEvent.mouseLocation
+    }
+
+    private func continueDrag() {
+        guard isDragging, let win = window else { return }
+        let current = NSEvent.mouseLocation
+        let dx = current.x - dragStartMouseScreen.x
+        let dy = current.y - dragStartMouseScreen.y
+        win.setFrameOrigin(CGPoint(
+            x: dragStartWindowOrigin.x + dx,
+            y: dragStartWindowOrigin.y + dy
+        ))
+    }
+
+    private func endDrag() {
+        isDragging = false
     }
 
     private func aspectFitRect(for imageSize: CGSize, in bounds: CGRect) -> CGRect {

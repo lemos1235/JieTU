@@ -313,8 +313,8 @@ final class AdjustmentOverlayController {
 
     private func buildToolbar() {
         let model = ToolbarModel(
-            showPin: !adjustView.isOCRActive,
-            showOCR: adjustView.canStartOCR
+            showPin: adjustView.hasSelection,
+            showOCR: adjustView.hasSelection
         )
         toolbarModel = model
         let toolbarView = ToolbarView(
@@ -331,7 +331,7 @@ final class AdjustmentOverlayController {
     }
 
     private func refreshToolbar() {
-        toolbarModel.showPin = !adjustView.isOCRActive
+        toolbarModel.showPin = adjustView.hasSelection
         toolbarModel.showOCR = adjustView.canStartOCR
     }
 
@@ -415,12 +415,7 @@ final class AdjustmentOverlayController {
 
     private func performPin() {
         guard let img = cropCurrentSelection() else { return }
-        let selectionFrame = CGRect(
-            x: screen.frame.origin.x + adjustView.selectionRect.minX,
-            y: screen.frame.origin.y + adjustView.selectionRect.minY,
-            width: adjustView.selectionRect.width,
-            height: adjustView.selectionRect.height
-        )
+        let selectionFrame = currentSelectionFrame()
         cancel()
         DispatchQueue.main.async {
             PinWindowController.create(image: img, initialFrame: selectionFrame)
@@ -429,11 +424,11 @@ final class AdjustmentOverlayController {
 
     private func performOCR() {
         guard let img = cropCurrentSelection() else { return }
-        adjustView.activateOCR(with: img)
-        refreshToolbar()
-        repositionToolbar()
-        toolbarPanel.orderFront(nil)
-        panel.invalidateCursorRects(for: adjustView)
+        let selectionFrame = currentSelectionFrame()
+        cancel()
+        DispatchQueue.main.async {
+            PinWindowController.create(image: img, initialFrame: selectionFrame, showsOCR: true)
+        }
     }
 
     private func performSave() {
@@ -463,6 +458,15 @@ final class AdjustmentOverlayController {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.writeObjects([img])
         cancel()
+    }
+
+    private func currentSelectionFrame() -> CGRect {
+        CGRect(
+            x: screen.frame.origin.x + adjustView.selectionRect.minX,
+            y: screen.frame.origin.y + adjustView.selectionRect.minY,
+            width: adjustView.selectionRect.width,
+            height: adjustView.selectionRect.height
+        )
     }
 }
 
@@ -522,7 +526,6 @@ final class AdjustmentOverlayView: NSView {
     private let magnifierCornerRadius: CGFloat = 10
     private let magnifierOffset = CGPoint(x: 18, y: -18)
     private let magnifierSampleSize = CGSize(width: 14, height: 10)
-    private var ocrOverlayView: OCRAnalysisContainerView?
 
     // MARK: Drag state
 
@@ -540,14 +543,6 @@ final class AdjustmentOverlayView: NSView {
     /// Whether a valid selection has been drawn
     var hasSelection: Bool {
         !selectionRect.isEmpty
-    }
-
-    var isOCRActive: Bool {
-        ocrOverlayView != nil
-    }
-
-    var canStartOCR: Bool {
-        hasSelection && !isOCRActive
     }
 
     override var acceptsFirstResponder: Bool {
@@ -588,10 +583,6 @@ final class AdjustmentOverlayView: NSView {
     // MARK: Cursor rects
 
     override func resetCursorRects() {
-        if isOCRActive {
-            addCursorRect(bounds, cursor: .arrow)
-            return
-        }
         guard !isAwaitingInitialDraw, !selectionRect.isEmpty else {
             addCursorRect(bounds, cursor: .crosshair)
             return
@@ -653,47 +644,31 @@ final class AdjustmentOverlayView: NSView {
             border.lineWidth = 1.5
             border.stroke()
 
-            if !isOCRActive {
-                // 4. Draw 8 handles (always visible once a selection exists)
-                for handle in Handle.allCases {
-                    let pt = point(for: handle)
-                    let dot = CGRect(
-                        x: pt.x - handleRadius, y: pt.y - handleRadius,
-                        width: handleRadius * 2, height: handleRadius * 2
-                    )
-                    ctx.setFillColor(NSColor.white.cgColor)
-                    ctx.setStrokeColor(NSColor(white: 0.3, alpha: 1).cgColor)
-                    ctx.setLineWidth(1)
-                    ctx.fillEllipse(in: dot)
-                    ctx.strokeEllipse(in: dot)
-                }
-
-                // 5. Pixel label
-                let label = "\(Int(selectionRect.width)) × \(Int(selectionRect.height))"
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-                    .foregroundColor: NSColor.white,
-                ]
-                let labelSize = (label as NSString).size(withAttributes: attrs)
-                let labelX = selectionRect.midX - labelSize.width / 2
-                let labelY = selectionRect.maxY + 6
-                (label as NSString).draw(at: CGPoint(x: labelX, y: labelY), withAttributes: attrs)
+            // 4. Draw 8 handles (always visible once a selection exists)
+            for handle in Handle.allCases {
+                let pt = point(for: handle)
+                let dot = CGRect(
+                    x: pt.x - handleRadius, y: pt.y - handleRadius,
+                    width: handleRadius * 2, height: handleRadius * 2
+                )
+                ctx.setFillColor(NSColor.white.cgColor)
+                ctx.setStrokeColor(NSColor(white: 0.3, alpha: 1).cgColor)
+                ctx.setLineWidth(1)
+                ctx.fillEllipse(in: dot)
+                ctx.strokeEllipse(in: dot)
             }
-        }
-    }
 
-    func activateOCR(with image: NSImage) {
-        guard !selectionRect.isEmpty else { return }
-        ocrOverlayView?.removeFromSuperview()
-        let overlayView = OCRAnalysisContainerView(image: image)
-        overlayView.frame = selectionRect
-        ocrOverlayView = overlayView
-        addSubview(overlayView)
-        overlayView.beginAnalysis()
-        dragMode = .none
-        onMagnifierChanged?(nil)
-        invalidateCursors()
-        needsDisplay = true
+            // 5. Pixel label
+            let label = "\(Int(selectionRect.width)) × \(Int(selectionRect.height))"
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+                .foregroundColor: NSColor.white,
+            ]
+            let labelSize = (label as NSString).size(withAttributes: attrs)
+            let labelX = selectionRect.midX - labelSize.width / 2
+            let labelY = selectionRect.maxY + 6
+            (label as NSString).draw(at: CGPoint(x: labelX, y: labelY), withAttributes: attrs)
+        }
     }
 
     // MARK: Handle positions
@@ -762,10 +737,6 @@ final class AdjustmentOverlayView: NSView {
     override func mouseDown(with event: NSEvent) {
         updatePointerLocation(with: event)
         let pt = convert(event.locationInWindow, from: nil)
-        if isOCRActive {
-            applyCursor(at: pt)
-            return
-        }
         if isAwaitingInitialDraw {
             dragMode = .initialDraw(startMouse: pt)
             selectionRect = CGRect(origin: pt, size: .zero)
@@ -806,9 +777,6 @@ final class AdjustmentOverlayView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         updatePointerLocation(with: event)
-        if isOCRActive {
-            return
-        }
         let pt = convert(event.locationInWindow, from: nil)
         switch dragMode {
         case let .initialDraw(startMouse):
@@ -836,10 +804,6 @@ final class AdjustmentOverlayView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         updatePointerLocation(with: event)
-        if isOCRActive {
-            dragMode = .none
-            return
-        }
         switch dragMode {
         case .initialDraw:
             dragMode = .none
@@ -881,9 +845,6 @@ final class AdjustmentOverlayView: NSView {
     // MARK: Resize logic
 
     private func shouldShowMagnifier(at point: CGPoint) -> Bool {
-        if isOCRActive {
-            return false
-        }
         guard !selectionRect.isEmpty, !isAwaitingInitialDraw else { return true }
         return selectionRect.contains(point)
     }
@@ -928,9 +889,6 @@ final class AdjustmentOverlayView: NSView {
     }
 
     private func cursor(for point: CGPoint) -> NSCursor {
-        if isOCRActive {
-            return .arrow
-        }
         if let shouldUseArrowCursorAtScreenPoint,
            shouldUseArrowCursorAtScreenPoint(screenPoint(for: point))
         {

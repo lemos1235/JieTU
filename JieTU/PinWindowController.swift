@@ -9,29 +9,41 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Shared inset between the pin window frame and the image content view.
+/// Used by both `PinWindowController` (to expand `initialFrame`) and
+/// `PinContentContainerView` (to inset its content view).
+let pinContentInset: CGFloat = 6
+
 @MainActor
 final class PinWindowController: NSWindowController, NSWindowDelegate {
     private static var all: [PinWindowController] = []
 
     private let image: NSImage
+    private let contentContainer: PinContentContainerView
 
     // MARK: Factory
 
-    static func create(image: NSImage, initialFrame: CGRect? = nil) {
-        let ctrl = PinWindowController(image: image, initialFrame: initialFrame)
+    static func create(image: NSImage, initialFrame: CGRect? = nil, showsOCR: Bool = false) {
+        let ctrl = PinWindowController(
+            image: image,
+            initialFrame: initialFrame,
+            showsOCR: showsOCR
+        )
         all.append(ctrl)
         ctrl.showWindow(nil)
         ctrl.window?.orderFrontRegardless()
+        ctrl.beginOCRAnalysisIfNeeded()
     }
 
     // MARK: Init
 
-    init(image: NSImage, initialFrame: CGRect? = nil) {
+    init(image: NSImage, initialFrame: CGRect? = nil, showsOCR: Bool = false) {
         self.image = image
 
         let windowFrame: CGRect
         if let initialFrame {
-            windowFrame = initialFrame
+            // Expand by pinContentInset so the inner image view is exactly the selection size
+            windowFrame = initialFrame.insetBy(dx: -pinContentInset, dy: -pinContentInset)
         } else {
             // Size pin window to image (max 60% of screen)
             let screen = NSScreen.main ?? NSScreen.screens[0]
@@ -58,14 +70,17 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         }
         let pinWindow = PinWindow(contentRect: windowFrame)
         pinWindow.contentAspectRatio = image.size
+        if showsOCR {
+            // OCR mode: left-click is reserved for text selection; drag handled by OCRAnalysisContainerView
+            pinWindow.isMovableByWindowBackground = false
+        }
+        contentContainer = PinContentContainerView(image: image, showsOCR: showsOCR)
         super.init(window: pinWindow)
 
-        // Image content
-        let imageView = PinImageContainerView(image: image)
-        imageView.onCopy = { [weak self] in self?.copyImage() }
-        imageView.onSave = { [weak self] in self?.saveImage() }
-        imageView.onClose = { [weak self] in self?.closePin() }
-        pinWindow.contentView = imageView
+        contentContainer.onCopy = { [weak self] in self?.copyImage() }
+        contentContainer.onSave = { [weak self] in self?.saveImage() }
+        contentContainer.onClose = { [weak self] in self?.closePin() }
+        pinWindow.contentView = contentContainer
         pinWindow.delegate = self
     }
 
@@ -109,37 +124,37 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-}
-
-// MARK: - SwiftUI image view
-
-struct PinImageView: View {
-    let image: NSImage
-    private let pinGlow = Color(red: 0.29, green: 0.58, blue: 1.0)
-
-    var body: some View {
-        Image(nsImage: image)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .overlay(
-                Rectangle()
-                    .stroke(pinGlow, lineWidth: 1)
-                    .shadow(color: pinGlow, radius: 4, x: 0, y: 0)
-            )
+    private func beginOCRAnalysisIfNeeded() {
+        contentContainer.beginOCRAnalysis()
     }
+
 }
 
-final class PinImageContainerView: NSView {
-    var onCopy: (() -> Void)?
-    var onSave: (() -> Void)?
-    var onClose: (() -> Void)?
+final class PinContentContainerView: NSView {
+    var onCopy: (() -> Void)? { didSet { ocrContainerView?.onCopy = onCopy } }
+    var onSave: (() -> Void)? { didSet { ocrContainerView?.onSave = onSave } }
+    var onClose: (() -> Void)? { didSet { ocrContainerView?.onClose = onClose } }
 
-    private let hostingView: NSHostingView<PinImageView>
+    private let contentInset: CGFloat = pinContentInset
+    private let contentView: NSView
+    private let ocrContainerView: OCRAnalysisContainerView?
 
-    init(image: NSImage) {
-        hostingView = NSHostingView(rootView: PinImageView(image: image))
+    init(image: NSImage, showsOCR: Bool) {
+        if showsOCR {
+            let ocrView = OCRAnalysisContainerView(image: image, showsBorder: true)
+            contentView = ocrView
+            ocrContainerView = ocrView
+        } else {
+            let hostingView = NSHostingView(
+                rootView: CapturedImageView(image: image, showsBorder: true)
+            )
+            contentView = hostingView
+            ocrContainerView = nil
+        }
         super.init(frame: .zero)
-        addSubview(hostingView)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        addSubview(contentView)
     }
 
     @available(*, unavailable)
@@ -157,7 +172,7 @@ final class PinImageContainerView: NSView {
 
     override func layout() {
         super.layout()
-        hostingView.frame = bounds
+        contentView.frame = bounds.insetBy(dx: contentInset, dy: contentInset)
     }
 
     override func menu(for _: NSEvent) -> NSMenu? {
@@ -195,5 +210,9 @@ final class PinImageContainerView: NSView {
     @objc
     private func handleClose() {
         onClose?()
+    }
+
+    func beginOCRAnalysis() {
+        ocrContainerView?.beginAnalysis()
     }
 }
