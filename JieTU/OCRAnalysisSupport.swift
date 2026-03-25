@@ -1,5 +1,5 @@
 //
-//  OCRModule.swift
+//  OCRAnalysisSupport.swift
 //  jietu
 //
 //  Created by Alfred Jobs on 2026/3/24.
@@ -38,7 +38,9 @@ final class PassiveHostingView<Content: View>: NSHostingView<Content> {
     }
 
     @available(*, unavailable)
-    required init?(coder _: NSCoder) { fatalError() }
+    required init?(coder _: NSCoder) {
+        fatalError()
+    }
 
     override func hitTest(_: NSPoint) -> NSView? {
         nil
@@ -167,15 +169,26 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
-    @objc private func handleCopy() { onCopy?() }
-    @objc private func handleSave() { onSave?() }
-    @objc private func handleClose() { onClose?() }
+    @objc private func handleCopy() {
+        onCopy?()
+    }
+
+    @objc private func handleSave() {
+        onSave?()
+    }
+
+    @objc private func handleClose() {
+        onClose?()
+    }
 
     // MARK: - Drag to move (middle-button or Option+left)
+
     // ImageAnalysisOverlayView sits on top and consumes mouse events, so we use a
     // local NSEvent monitor at the window level to intercept drag gestures first.
 
-    override var mouseDownCanMoveWindow: Bool { false }
+    override var mouseDownCanMoveWindow: Bool {
+        false
+    }
 
     private var eventMonitor: Any?
 
@@ -198,7 +211,7 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
         switch event.type {
         case .leftMouseDown where event.modifierFlags.contains(.option):
             beginDrag(event: event)
-            return nil  // consume; don't pass to overlay
+            return nil // consume; don't pass to overlay
         case .leftMouseDragged:
             if isDragging { continueDrag(); return nil }
         case .leftMouseUp:
@@ -216,7 +229,7 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
         return event
     }
 
-    private func beginDrag(event: NSEvent) {
+    private func beginDrag(event _: NSEvent) {
         guard let win = window else { return }
         isDragging = true
         dragStartWindowOrigin = win.frame.origin

@@ -231,6 +231,7 @@ final class AdjustmentOverlayController {
             screen: screen
         )
         panel.level = .screenSaver
+        panel.colorSpace = NSColorSpace.sRGB
         panel.isOpaque = true
         panel.hasShadow = false
         panel.ignoresMouseEvents = false
@@ -332,7 +333,7 @@ final class AdjustmentOverlayController {
 
     private func refreshToolbar() {
         toolbarModel.showPin = adjustView.hasSelection
-        toolbarModel.showOCR = adjustView.canStartOCR
+        toolbarModel.showOCR = false
     }
 
     private func repositionToolbar() {
@@ -355,7 +356,13 @@ final class AdjustmentOverlayController {
     // MARK: - Crop helper
 
     private func cropCurrentSelection() -> NSImage? {
-        let sel = adjustView.selectionRect
+        let raw = adjustView.selectionRect
+        let sel = CGRect(
+            x: raw.origin.x.rounded(),
+            y: raw.origin.y.rounded(),
+            width: raw.width.rounded(),
+            height: raw.height.rounded()
+        )
         guard let cgFull = fullImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return nil
         }
@@ -461,11 +468,12 @@ final class AdjustmentOverlayController {
     }
 
     private func currentSelectionFrame() -> CGRect {
-        CGRect(
-            x: screen.frame.origin.x + adjustView.selectionRect.minX,
-            y: screen.frame.origin.y + adjustView.selectionRect.minY,
-            width: adjustView.selectionRect.width,
-            height: adjustView.selectionRect.height
+        let raw = adjustView.selectionRect
+        return CGRect(
+            x: (screen.frame.origin.x + raw.minX).rounded(),
+            y: (screen.frame.origin.y + raw.minY).rounded(),
+            width: raw.width.rounded(),
+            height: raw.height.rounded()
         )
     }
 }

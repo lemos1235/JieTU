@@ -42,8 +42,15 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
 
         let windowFrame: CGRect
         if let initialFrame {
+            // Round to integer pixels first so NSWindow doesn't introduce sub-pixel drift
+            let rounded = CGRect(
+                x: initialFrame.origin.x.rounded(),
+                y: initialFrame.origin.y.rounded(),
+                width: initialFrame.width.rounded(),
+                height: initialFrame.height.rounded()
+            )
             // Expand by pinContentInset so the inner image view is exactly the selection size
-            windowFrame = initialFrame.insetBy(dx: -pinContentInset, dy: -pinContentInset)
+            windowFrame = rounded.insetBy(dx: -pinContentInset, dy: -pinContentInset)
         } else {
             // Size pin window to image (max 60% of screen)
             let screen = NSScreen.main ?? NSScreen.screens[0]
@@ -80,6 +87,7 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         contentContainer.onCopy = { [weak self] in self?.copyImage() }
         contentContainer.onSave = { [weak self] in self?.saveImage() }
         contentContainer.onClose = { [weak self] in self?.closePin() }
+        contentContainer.onSwitchToOCR = { [weak self] in self?.enableOCR() }
         pinWindow.contentView = contentContainer
         pinWindow.delegate = self
     }
@@ -128,33 +136,53 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         contentContainer.beginOCRAnalysis()
     }
 
+    private func enableOCR() {
+        // OCR mode is permanent for this window's lifetime — disable drag-to-move
+        // so the user can select text without accidentally repositioning the window.
+        window?.isMovableByWindowBackground = false
+        contentContainer.switchToOCR()
+    }
 }
 
 final class PinContentContainerView: NSView {
-    var onCopy: (() -> Void)? { didSet { ocrContainerView?.onCopy = onCopy } }
-    var onSave: (() -> Void)? { didSet { ocrContainerView?.onSave = onSave } }
-    var onClose: (() -> Void)? { didSet { ocrContainerView?.onClose = onClose } }
+    var onCopy: (() -> Void)? {
+        didSet { ocrContainerView?.onCopy = onCopy }
+    }
+
+    var onSave: (() -> Void)? {
+        didSet { ocrContainerView?.onSave = onSave }
+    }
+
+    var onClose: (() -> Void)? {
+        didSet { ocrContainerView?.onClose = onClose }
+    }
+
+    var onSwitchToOCR: (() -> Void)?
 
     private let contentInset: CGFloat = pinContentInset
-    private let contentView: NSView
-    private let ocrContainerView: OCRAnalysisContainerView?
+    private var currentContentView: NSView
+    private var ocrContainerView: OCRAnalysisContainerView?
+    private let storedImage: NSImage
+    private var isOCRMode: Bool
 
     init(image: NSImage, showsOCR: Bool) {
+        storedImage = image
+        isOCRMode = showsOCR
         if showsOCR {
             let ocrView = OCRAnalysisContainerView(image: image, showsBorder: true)
-            contentView = ocrView
+            currentContentView = ocrView
             ocrContainerView = ocrView
         } else {
             let hostingView = NSHostingView(
                 rootView: CapturedImageView(image: image, showsBorder: true)
             )
-            contentView = hostingView
+            currentContentView = hostingView
             ocrContainerView = nil
         }
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
-        addSubview(contentView)
+        addSubview(currentContentView)
     }
 
     @available(*, unavailable)
@@ -172,11 +200,18 @@ final class PinContentContainerView: NSView {
 
     override func layout() {
         super.layout()
-        contentView.frame = bounds.insetBy(dx: contentInset, dy: contentInset)
+        currentContentView.frame = bounds.insetBy(dx: contentInset, dy: contentInset)
     }
 
     override func menu(for _: NSEvent) -> NSMenu? {
         let menu = NSMenu()
+
+        if !isOCRMode {
+            let ocrItem = NSMenuItem(title: "OCR识别", action: #selector(handleSwitchToOCR), keyEquivalent: "")
+            ocrItem.target = self
+            menu.addItem(ocrItem)
+            menu.addItem(.separator())
+        }
 
         let copyItem = NSMenuItem(title: "复制当前图像", action: #selector(handleCopy), keyEquivalent: "")
         copyItem.target = self
@@ -195,6 +230,26 @@ final class PinContentContainerView: NSView {
         menu.addItem(closeItem)
 
         return menu
+    }
+
+    @objc
+    private func handleSwitchToOCR() {
+        onSwitchToOCR?()
+    }
+
+    func switchToOCR() {
+        guard !isOCRMode else { return }
+        isOCRMode = true
+        let ocrView = OCRAnalysisContainerView(image: storedImage, showsBorder: true)
+        ocrView.onCopy = onCopy
+        ocrView.onSave = onSave
+        ocrView.onClose = onClose
+        ocrContainerView = ocrView
+        currentContentView.removeFromSuperview()
+        currentContentView = ocrView
+        addSubview(currentContentView)
+        needsLayout = true
+        ocrView.beginAnalysis()
     }
 
     @objc
