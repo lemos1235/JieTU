@@ -7,6 +7,7 @@
 
 import AppKit
 import SwiftUI
+import Vision
 import VisionKit
 
 // MARK: - Shared image view + hosting
@@ -51,18 +52,37 @@ final class PassiveHostingView<Content: View>: NSHostingView<Content> {
 
 enum OCRAnalysisService {
     private static let analyzer = ImageAnalyzer()
-    private static let config = ImageAnalyzer.Configuration([.text])
+    private static let config: ImageAnalyzer.Configuration = {
+        var c = ImageAnalyzer.Configuration([.text, .machineReadableCode])
+        c.locales = [
+            "ja-JP", "zh-Hans", "zh-Hant",
+            "ko-KR", "en-US", "fr-FR", "de-DE",
+            "es-ES", "it-IT", "pt-BR", "ru-RU",
+        ]
+        return c
+    }()
 
-    static func analyze(image: NSImage, overlay: ImageAnalysisOverlayView) {
+    static func analyze(
+        image: NSImage,
+        overlay: ImageAnalysisOverlayView,
+        onBarcodes: @escaping @MainActor ([VNBarcodeObservation]) -> Void
+    ) {
         Task.detached(priority: .userInitiated) {
+            async let visionKitResult = analyzer.analyze(image, orientation: .up, configuration: config)
+
+            async let barcodeResult: [VNBarcodeObservation] = {
+                guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+                else { return [] }
+                let request = VNDetectBarcodesRequest()
+                try? VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([request])
+                return request.results ?? []
+            }()
+
             do {
-                let analysis = try await analyzer.analyze(
-                    image,
-                    orientation: .up,
-                    configuration: config
-                )
+                let (analysis, barcodes) = try await (visionKitResult, barcodeResult)
                 await MainActor.run {
                     overlay.analysis = analysis
+                    onBarcodes(barcodes)
                 }
             } catch {
                 NSLog("OCR analysis failed: \(error.localizedDescription)")
@@ -81,6 +101,7 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
 
     private let imageSize: CGSize
     private let capturedImage: NSImage
+    let barcodeAnnotationView = BarcodeAnnotationView()
 
     // Drag state for middle-button and Option+left drag
     private var dragStartWindowOrigin: CGPoint = .zero
@@ -102,6 +123,7 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
 
         addSubview(hostingView)
         addSubview(analysisOverlay)
+        addSubview(barcodeAnnotationView)
     }
 
     @available(*, unavailable)
@@ -110,13 +132,17 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
     }
 
     func beginAnalysis() {
-        OCRAnalysisService.analyze(image: capturedImage, overlay: analysisOverlay)
+        OCRAnalysisService.analyze(image: capturedImage, overlay: analysisOverlay) { [weak self] barcodes in
+            self?.barcodeAnnotationView.update(barcodes: barcodes)
+        }
     }
 
     override func layout() {
         super.layout()
         hostingView.frame = bounds
-        analysisOverlay.frame = aspectFitRect(for: imageSize, in: bounds)
+        let imageRect = aspectFitRect(for: imageSize, in: bounds)
+        analysisOverlay.frame = imageRect
+        barcodeAnnotationView.frame = imageRect
     }
 
     // MARK: ImageAnalysisOverlayViewDelegate
@@ -125,9 +151,25 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
         _ overlayView: ImageAnalysisOverlayView,
         updatedMenuFor _: NSMenu,
         for _: NSEvent,
-        at _: CGPoint
+        at point: CGPoint
     ) -> NSMenu {
         let menu = NSMenu()
+
+        // point is in analysisOverlay coordinates == barcodeAnnotationView coordinates
+        if let barcode = barcodeAnnotationView.barcode(at: point) {
+            let payload = barcode.payloadStringValue ?? ""
+            let isURL = URL(string: payload)?.scheme != nil
+            let title = isURL ? "复制链接" : "复制文本"
+            let copyBarcodeItem = NSMenuItem(
+                title: title,
+                action: #selector(handleCopyBarcodePayload(_:)),
+                keyEquivalent: ""
+            )
+            copyBarcodeItem.target = self
+            copyBarcodeItem.representedObject = payload
+            menu.addItem(copyBarcodeItem)
+            menu.addItem(.separator())
+        }
 
         let selectedText = overlayView.selectedText
         if !selectedText.isEmpty {
@@ -160,6 +202,12 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
 
     func textSelectionDidChange(_ overlayView: ImageAnalysisOverlayView) {
         overlayView.setSupplementaryInterfaceHidden(true, animated: false)
+    }
+
+    @objc private func handleCopyBarcodePayload(_ sender: NSMenuItem) {
+        guard let payload = sender.representedObject as? String, !payload.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(payload, forType: .string)
     }
 
     @objc private func handleCopySelectedText() {
@@ -261,6 +309,107 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
             y: bounds.midY - fittedSize.height / 2,
             width: fittedSize.width,
             height: fittedSize.height
+        )
+    }
+}
+
+// MARK: - Barcode annotation overlay
+
+final class BarcodeAnnotationView: NSView {
+    private var barcodes: [VNBarcodeObservation] = []
+    private var barcodeTrackingAreas: [NSTrackingArea] = []
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.backgroundColor = .clear
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError() }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Only claim hit-testing over actual barcode regions so the
+        // ImageAnalysisOverlayView beneath us still receives events elsewhere.
+        barcodes.contains { rectForObservation($0).contains(point) } ? self : nil
+    }
+
+    func update(barcodes: [VNBarcodeObservation]) {
+        self.barcodes = barcodes
+        needsDisplay = true
+        rebuildTrackingAreas()
+    }
+
+    /// Returns the barcode observation whose view-space rect contains `point`,
+    /// where `point` is in this view's coordinate space.
+    func barcode(at point: CGPoint) -> VNBarcodeObservation? {
+        barcodes.first { rectForObservation($0).contains(point) }
+    }
+
+    // MARK: Drawing
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard !barcodes.isEmpty else { return }
+        let ctx = NSGraphicsContext.current?.cgContext
+        for obs in barcodes {
+            let rect = rectForObservation(obs)
+            // Subtle fill
+            ctx?.setFillColor(NSColor.systemYellow.withAlphaComponent(0.12).cgColor)
+            ctx?.fill(rect)
+            // Border
+            ctx?.setStrokeColor(NSColor.systemYellow.withAlphaComponent(0.9).cgColor)
+            ctx?.setLineWidth(2)
+            ctx?.stroke(rect)
+        }
+    }
+
+    // MARK: Hover tooltip via tracking areas
+
+    private func rebuildTrackingAreas() {
+        for ta in barcodeTrackingAreas { removeTrackingArea(ta) }
+        barcodeTrackingAreas.removeAll()
+        for obs in barcodes {
+            let rect = rectForObservation(obs)
+            let ta = NSTrackingArea(
+                rect: rect,
+                options: [.mouseEnteredAndExited, .activeAlways],
+                owner: self,
+                userInfo: ["payload": obs.payloadStringValue ?? ""]
+            )
+            addTrackingArea(ta)
+            barcodeTrackingAreas.append(ta)
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        rebuildTrackingAreas()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        let payload = (event.trackingArea?.userInfo?["payload"] as? String) ?? ""
+        toolTip = payload.isEmpty ? nil : payload
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        toolTip = nil
+    }
+
+    // MARK: Coordinate conversion
+
+    /// Converts a `VNBarcodeObservation.boundingBox` (normalized, bottom-left origin)
+    /// to this view's coordinate space.
+    /// NSView is not flipped (origin at bottom-left, Y axis up), which matches
+    /// Vision's normalized coordinate system directly — no Y-flip needed.
+    private func rectForObservation(_ obs: VNBarcodeObservation) -> CGRect {
+        let vb = obs.boundingBox
+        let w = bounds.width
+        let h = bounds.height
+        return CGRect(
+            x: vb.origin.x * w,
+            y: vb.origin.y * h,
+            width: vb.width * w,
+            height: vb.height * h
         )
     }
 }
