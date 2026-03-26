@@ -62,6 +62,20 @@ enum OCRAnalysisService {
         return c
     }()
 
+    private static func detectBarcodes(in image: NSImage) async -> [VNBarcodeObservation] {
+        await withCheckedContinuation { cont in
+            Task.detached {
+                guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                    cont.resume(returning: [])
+                    return
+                }
+                let request = VNDetectBarcodesRequest()
+                try? VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([request])
+                cont.resume(returning: request.results ?? [])
+            }
+        }
+    }
+
     static func analyze(
         image: NSImage,
         overlay: ImageAnalysisOverlayView,
@@ -69,14 +83,7 @@ enum OCRAnalysisService {
     ) {
         Task.detached(priority: .userInitiated) {
             async let visionKitResult = analyzer.analyze(image, orientation: .up, configuration: config)
-
-            async let barcodeResult: [VNBarcodeObservation] = {
-                guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-                else { return [] }
-                let request = VNDetectBarcodesRequest()
-                try? VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([request])
-                return request.results ?? []
-            }()
+            async let barcodeResult = detectBarcodes(in: image)
 
             do {
                 let (analysis, barcodes) = try await (visionKitResult, barcodeResult)
@@ -118,7 +125,6 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
 
         analysisOverlay.delegate = self
         analysisOverlay.preferredInteractionTypes = .textSelection
-        analysisOverlay.isSupplementaryInterfaceHidden = true
         analysisOverlay.setSupplementaryInterfaceHidden(true, animated: false)
 
         addSubview(hostingView)
@@ -158,7 +164,7 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
         let selectedText = overlayView.selectedText
         if !selectedText.isEmpty {
             let copyTextItem = NSMenuItem(
-                title: "复制已选文字",
+                title: "复制已选文本",
                 action: #selector(handleCopySelectedText),
                 keyEquivalent: ""
             )
@@ -184,7 +190,7 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
             menu.addItem(copyBarcodeItem)
         }
 
-        if menu.items.count > 0 {
+        if !menu.items.isEmpty {
             menu.addItem(.separator())
         }
 
@@ -356,17 +362,16 @@ final class BarcodeAnnotationView: NSView {
     // MARK: Drawing
 
     override func draw(_: NSRect) {
-        guard !barcodes.isEmpty else { return }
-        let ctx = NSGraphicsContext.current?.cgContext
+        guard !barcodes.isEmpty, let ctx = NSGraphicsContext.current?.cgContext else { return }
         for obs in barcodes {
             let rect = rectForObservation(obs)
             // Subtle fill
-            ctx?.setFillColor(NSColor.systemYellow.withAlphaComponent(0.12).cgColor)
-            ctx?.fill(rect)
+            ctx.setFillColor(NSColor.systemYellow.withAlphaComponent(0.12).cgColor)
+            ctx.fill(rect)
             // Border
-            ctx?.setStrokeColor(NSColor.systemYellow.withAlphaComponent(0.9).cgColor)
-            ctx?.setLineWidth(2)
-            ctx?.stroke(rect)
+            ctx.setStrokeColor(NSColor.systemYellow.withAlphaComponent(0.9).cgColor)
+            ctx.setLineWidth(2)
+            ctx.stroke(rect)
         }
     }
 
