@@ -213,18 +213,18 @@ final class PinContentContainerView: NSView {
             menu.addItem(.separator())
         }
 
-        let copyItem = NSMenuItem(title: "复制当前图像", action: #selector(handleCopy), keyEquivalent: "")
+        let copyItem = NSMenuItem(title: "复制图像", action: #selector(handleCopy), keyEquivalent: "")
         copyItem.target = self
         menu.addItem(copyItem)
 
-        let saveItem = NSMenuItem(title: "另存为图片", action: #selector(handleSave), keyEquivalent: "")
+        let saveItem = NSMenuItem(title: "图像另存为", action: #selector(handleSave), keyEquivalent: "")
         saveItem.target = self
         menu.addItem(saveItem)
 
         menu.addItem(.separator())
 
         let closeItem = NSMenuItem(
-            title: "关闭该贴图", action: #selector(handleClose), keyEquivalent: ""
+            title: "关闭", action: #selector(handleClose), keyEquivalent: ""
         )
         closeItem.target = self
         menu.addItem(closeItem)

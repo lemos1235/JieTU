@@ -155,8 +155,22 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
     ) -> NSMenu {
         let menu = NSMenu()
 
-        // point is in analysisOverlay coordinates == barcodeAnnotationView coordinates
-        if let barcode = barcodeAnnotationView.barcode(at: point) {
+        let selectedText = overlayView.selectedText
+        if !selectedText.isEmpty {
+            let copyTextItem = NSMenuItem(
+                title: "复制已选文字",
+                action: #selector(handleCopySelectedText),
+                keyEquivalent: ""
+            )
+            copyTextItem.target = self
+            menu.addItem(copyTextItem)
+        }
+
+        // point is in analysisOverlay coordinates (flipped, Y top-down).
+        // barcodeAnnotationView uses Vision coordinates (Y bottom-up), so flip Y before hit-testing.
+        let h = analysisOverlay.bounds.height
+        let flippedPoint = CGPoint(x: point.x, y: h - point.y)
+        if let barcode = barcodeAnnotationView.barcode(at: flippedPoint) {
             let payload = barcode.payloadStringValue ?? ""
             let isURL = URL(string: payload)?.scheme != nil
             let title = isURL ? "复制链接" : "复制文本"
@@ -168,32 +182,23 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
             copyBarcodeItem.target = self
             copyBarcodeItem.representedObject = payload
             menu.addItem(copyBarcodeItem)
+        }
+
+        if menu.items.count > 0 {
             menu.addItem(.separator())
         }
 
-        let selectedText = overlayView.selectedText
-        if !selectedText.isEmpty {
-            let copyTextItem = NSMenuItem(
-                title: "复制当前已选文字",
-                action: #selector(handleCopySelectedText),
-                keyEquivalent: ""
-            )
-            copyTextItem.target = self
-            menu.addItem(copyTextItem)
-            menu.addItem(.separator())
-        }
-
-        let copyItem = NSMenuItem(title: "复制当前图像", action: #selector(handleCopy), keyEquivalent: "")
+        let copyItem = NSMenuItem(title: "复制图像", action: #selector(handleCopy), keyEquivalent: "")
         copyItem.target = self
         menu.addItem(copyItem)
 
-        let saveItem = NSMenuItem(title: "另存为图片", action: #selector(handleSave), keyEquivalent: "")
+        let saveItem = NSMenuItem(title: "图像另存为", action: #selector(handleSave), keyEquivalent: "")
         saveItem.target = self
         menu.addItem(saveItem)
 
         menu.addItem(.separator())
 
-        let closeItem = NSMenuItem(title: "关闭该贴图", action: #selector(handleClose), keyEquivalent: "")
+        let closeItem = NSMenuItem(title: "关闭", action: #selector(handleClose), keyEquivalent: "")
         closeItem.target = self
         menu.addItem(closeItem)
 
@@ -326,7 +331,9 @@ final class BarcodeAnnotationView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder _: NSCoder) { fatalError() }
+    required init?(coder _: NSCoder) {
+        fatalError()
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         // Only claim hit-testing over actual barcode regions so the
@@ -348,7 +355,7 @@ final class BarcodeAnnotationView: NSView {
 
     // MARK: Drawing
 
-    override func draw(_ dirtyRect: NSRect) {
+    override func draw(_: NSRect) {
         guard !barcodes.isEmpty else { return }
         let ctx = NSGraphicsContext.current?.cgContext
         for obs in barcodes {
@@ -366,7 +373,9 @@ final class BarcodeAnnotationView: NSView {
     // MARK: Hover tooltip via tracking areas
 
     private func rebuildTrackingAreas() {
-        for ta in barcodeTrackingAreas { removeTrackingArea(ta) }
+        for ta in barcodeTrackingAreas {
+            removeTrackingArea(ta)
+        }
         barcodeTrackingAreas.removeAll()
         for obs in barcodes {
             let rect = rectForObservation(obs)
@@ -391,7 +400,7 @@ final class BarcodeAnnotationView: NSView {
         toolTip = payload.isEmpty ? nil : payload
     }
 
-    override func mouseExited(with event: NSEvent) {
+    override func mouseExited(with _: NSEvent) {
         toolTip = nil
     }
 
