@@ -15,9 +15,10 @@ enum StatusMenuBuilder {
         let screenshotItem = NSMenuItem(
             title: "截图",
             action: #selector(AppDelegate.startScreenshot),
-            keyEquivalent: ""
+            keyEquivalent: "a"
         )
         screenshotItem.target = delegate
+        screenshotItem.keyEquivalentModifierMask = [.control, .command]
         screenshotItem.image = NSImage(
             systemSymbolName: "camera.viewfinder", accessibilityDescription: nil
         )

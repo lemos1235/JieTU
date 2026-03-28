@@ -64,6 +64,11 @@ enum ScreenCaptureManager {
         let content = try await SCShareableContent.excludingDesktopWindows(
             false, onScreenWindowsOnly: true
         )
+        return try await captureFullScreen(screen, content: content)
+    }
+
+    /// Same as above but accepts pre-fetched SCShareableContent to avoid redundant enumeration.
+    static func captureFullScreen(_ screen: NSScreen, content: SCShareableContent) async throws -> NSImage {
         guard let display = content.displays.first(where: { $0.frame.intersects(screen.frame) })
         else {
             throw CaptureError.noDisplay

@@ -673,8 +673,31 @@ final class AdjustmentOverlayView: NSView {
                 .foregroundColor: NSColor.white,
             ]
             let labelSize = (label as NSString).size(withAttributes: attrs)
-            let labelX = selectionRect.midX - labelSize.width / 2
-            let labelY = selectionRect.maxY + 6
+            let margin: CGFloat = 4
+            let gap: CGFloat = 6
+
+            let topY = selectionRect.maxY + gap
+            let bottomY = max(bounds.minY + margin, selectionRect.minY - labelSize.height - gap)
+
+            let topLabelX: CGFloat
+            let candidateTopLeft = max(bounds.minX + margin, selectionRect.minX)
+            if candidateTopLeft + labelSize.width <= bounds.maxX - margin {
+                topLabelX = candidateTopLeft
+            } else {
+                topLabelX = max(bounds.minX + margin, min(bounds.maxX - labelSize.width - margin, selectionRect.maxX - labelSize.width))
+            }
+
+            let bottomLabelX = max(bounds.minX + margin, selectionRect.minX)
+            let labelX: CGFloat
+            let labelY: CGFloat
+            if topY + labelSize.height <= bounds.maxY - margin {
+                labelX = topLabelX
+                labelY = topY
+            } else {
+                labelX = bottomLabelX
+                labelY = bottomY
+            }
+
             (label as NSString).draw(at: CGPoint(x: labelX, y: labelY), withAttributes: attrs)
         }
     }

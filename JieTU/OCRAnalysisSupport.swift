@@ -63,17 +63,13 @@ enum OCRAnalysisService {
     }()
 
     private static func detectBarcodes(in image: NSImage) async -> [VNBarcodeObservation] {
-        await withCheckedContinuation { cont in
-            Task.detached {
-                guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-                    cont.resume(returning: [])
-                    return
-                }
-                let request = VNDetectBarcodesRequest()
-                try? VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([request])
-                cont.resume(returning: request.results ?? [])
-            }
-        }
+        await Task.detached {
+            guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            else { return [] }
+            let request = VNDetectBarcodesRequest()
+            try? VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([request])
+            return request.results ?? []
+        }.value
     }
 
     static func analyze(
@@ -86,7 +82,8 @@ enum OCRAnalysisService {
             async let barcodeResult = detectBarcodes(in: image)
 
             do {
-                let (analysis, barcodes) = try await (visionKitResult, barcodeResult)
+                let analysis = try await visionKitResult
+                let barcodes = await barcodeResult
                 await MainActor.run {
                     overlay.analysis = analysis
                     onBarcodes(barcodes)
