@@ -9,10 +9,48 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Shared inset between the pin window frame and the image content view.
-/// Used by both `PinWindowController` (to expand `initialFrame`) and
-/// `PinContentContainerView` (to inset its content view).
-let pinContentInset: CGFloat = 6
+let kPinContentInset: CGFloat = 6
+
+let kGlowColor = NSColor(red: 0.29, green: 0.58, blue: 1.0, alpha: 1)
+
+final class PinWindow: NSPanel {
+    var onDragBegan: (() -> Void)?
+    var onDragEnded: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        onDragBegan?()
+        super.mouseDown(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        super.mouseUp(with: event)
+        onDragEnded?()
+    }
+
+    init(contentRect: NSRect) {
+        super.init(
+            contentRect: contentRect,
+            styleMask: [.borderless, .nonactivatingPanel, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        level = .statusBar
+        isMovableByWindowBackground = true
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        isOpaque = false
+        hasShadow = true
+        isReleasedWhenClosed = true
+        backgroundColor = .black.withAlphaComponent(0.01)
+    }
+
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override var canBecomeMain: Bool {
+        false
+    }
+}
 
 @MainActor
 final class PinWindowController: NSWindowController, NSWindowDelegate {
@@ -49,8 +87,8 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
                 width: initialFrame.width.rounded(),
                 height: initialFrame.height.rounded()
             )
-            // Expand by pinContentInset so the inner image view is exactly the selection size
-            windowFrame = rounded.insetBy(dx: -pinContentInset, dy: -pinContentInset)
+            // Expand by kPinContentInset so the inner image view is exactly the selection size
+            windowFrame = rounded.insetBy(dx: -kPinContentInset, dy: -kPinContentInset)
         } else {
             // Size pin window to image (max 60% of screen)
             let screen = NSScreen.main ?? NSScreen.screens[0]
@@ -88,6 +126,14 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         contentContainer.onSave = { [weak self] in self?.saveImage() }
         contentContainer.onClose = { [weak self] in self?.closePin() }
         contentContainer.onSwitchToOCR = { [weak self] in self?.enableOCR() }
+        contentContainer.wantsLayer = true
+        if let layer = contentContainer.layer {
+            layer.masksToBounds = false
+            layer.shadowColor = kGlowColor.cgColor
+            layer.shadowOpacity = 0.8
+            layer.shadowOffset = .zero
+            layer.shadowRadius = kPinContentInset
+        }
         pinWindow.contentView = contentContainer
         pinWindow.delegate = self
     }
@@ -159,7 +205,7 @@ final class PinContentContainerView: NSView {
 
     var onSwitchToOCR: (() -> Void)?
 
-    private let contentInset: CGFloat = pinContentInset
+    private let contentInset: CGFloat = kPinContentInset
     private var currentContentView: NSView
     private var ocrContainerView: OCRAnalysisContainerView?
     private let storedImage: NSImage
@@ -169,12 +215,12 @@ final class PinContentContainerView: NSView {
         storedImage = image
         isOCRMode = showsOCR
         if showsOCR {
-            let ocrView = OCRAnalysisContainerView(image: image, showsBorder: true)
+            let ocrView = OCRAnalysisContainerView(image: image)
             currentContentView = ocrView
             ocrContainerView = ocrView
         } else {
             let hostingView = NSHostingView(
-                rootView: CapturedImageView(image: image, showsBorder: true)
+                rootView: CapturedImageView(image: image)
             )
             currentContentView = hostingView
             ocrContainerView = nil

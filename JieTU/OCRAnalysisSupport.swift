@@ -10,44 +10,6 @@ import SwiftUI
 import Vision
 import VisionKit
 
-// MARK: - Shared image view + hosting
-
-struct CapturedImageView: View {
-    let image: NSImage
-    let showsBorder: Bool
-    private let pinGlow = Color(red: 0.29, green: 0.58, blue: 1.0)
-
-    var body: some View {
-        Image(nsImage: image)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .overlay {
-                if showsBorder {
-                    Rectangle()
-                        .stroke(pinGlow, lineWidth: 1)
-                }
-            }
-            .shadow(color: showsBorder ? pinGlow : .clear, radius: 4, x: 0, y: 0)
-    }
-}
-
-final class PassiveHostingView<Content: View>: NSHostingView<Content> {
-    required init(rootView: Content) {
-        super.init(rootView: rootView)
-        wantsLayer = true
-        layer?.backgroundColor = .clear
-    }
-
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
-        fatalError()
-    }
-
-    override func hitTest(_: NSPoint) -> NSView? {
-        nil
-    }
-}
-
 // MARK: - OCR (used by SelectionOverlay)
 
 enum OCRAnalysisService {
@@ -116,7 +78,7 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
         capturedImage = image
         imageSize = image.size
         hostingView = PassiveHostingView(
-            rootView: CapturedImageView(image: image, showsBorder: showsBorder)
+            rootView: CapturedImageView(image: image)
         )
         super.init(frame: .zero)
 

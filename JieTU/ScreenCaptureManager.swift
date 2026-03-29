@@ -7,6 +7,34 @@
 
 import AppKit
 import ScreenCaptureKit
+import SwiftUI
+
+struct CapturedImageView: View {
+    let image: NSImage
+
+    var body: some View {
+        Image(nsImage: image)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+    }
+}
+
+final class PassiveHostingView<Content: View>: NSHostingView<Content> {
+    required init(rootView: Content) {
+        super.init(rootView: rootView)
+        wantsLayer = true
+        layer?.backgroundColor = .clear
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError()
+    }
+
+    override func hitTest(_: NSPoint) -> NSView? {
+        nil
+    }
+}
 
 @MainActor
 enum ScreenCaptureManager {
