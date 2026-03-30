@@ -10,8 +10,9 @@ import SwiftUI
 import Vision
 import VisionKit
 
-// MARK: - OCR (used by SelectionOverlay)
+// MARK: - OCR
 
+/// 封装 VisionKit 图像分析与 Vision 条码检测，异步返回结果到主线程。
 enum OCRAnalysisService {
     private static let analyzer = ImageAnalyzer()
     private static let config: ImageAnalyzer.Configuration = {
@@ -51,12 +52,13 @@ enum OCRAnalysisService {
                     onBarcodes(barcodes)
                 }
             } catch {
-                NSLog("OCR analysis failed: \(error.localizedDescription)")
+                NSLog("OCR 分析失败：\(error.localizedDescription)")
             }
         }
     }
 }
 
+/// 承载截图图像与 OCR 分析覆盖层的容器视图，支持文本选择、条码标注及拖动移动窗口。
 final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
     let hostingView: PassiveHostingView<CapturedImageView>
     let analysisOverlay = ImageAnalysisOverlayView()
@@ -69,7 +71,7 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
     private let capturedImage: NSImage
     let barcodeAnnotationView = BarcodeAnnotationView()
 
-    // Drag state for middle-button and Option+left drag
+    // 中键和 Option+左键拖动的状态
     private var dragStartWindowOrigin: CGPoint = .zero
     private var dragStartMouseScreen: CGPoint = .zero
     private var isDragging = false
@@ -131,8 +133,8 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
             menu.addItem(copyTextItem)
         }
 
-        // point is in analysisOverlay coordinates (flipped, Y top-down).
-        // barcodeAnnotationView uses Vision coordinates (Y bottom-up), so flip Y before hit-testing.
+        // point 是 analysisOverlay 的坐标（翻转，Y 向下）。
+        // barcodeAnnotationView 使用 Vision 坐标（Y 向上），因此命中测试前需翻转 Y。
         let h = analysisOverlay.bounds.height
         let flippedPoint = CGPoint(x: point.x, y: h - point.y)
         if let barcode = barcodeAnnotationView.barcode(at: flippedPoint) {
@@ -201,8 +203,8 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
 
     // MARK: - Drag to move (middle-button or Option+left)
 
-    // ImageAnalysisOverlayView sits on top and consumes mouse events, so we use a
-    // local NSEvent monitor at the window level to intercept drag gestures first.
+    // ImageAnalysisOverlayView 覆盖在上层并消费鼠标事件，因此使用
+    // 窗口级别的 NSEvent 本地监听器优先拦截拖动手势。
 
     override var mouseDownCanMoveWindow: Bool {
         false
@@ -229,7 +231,7 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
         switch event.type {
         case .leftMouseDown where event.modifierFlags.contains(.option):
             beginDrag(event: event)
-            return nil // consume; don't pass to overlay
+            return nil // 消费事件，不传递给 overlay
         case .leftMouseDragged:
             if isDragging { continueDrag(); return nil }
         case .leftMouseUp:
@@ -285,6 +287,7 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
 
 // MARK: - Barcode annotation overlay
 
+/// 在图像上叠加条码高亮框并提供悬停 tooltip 的透明视图。
 final class BarcodeAnnotationView: NSView {
     private var barcodes: [VNBarcodeObservation] = []
     private var barcodeTrackingAreas: [NSTrackingArea] = []
@@ -301,8 +304,8 @@ final class BarcodeAnnotationView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        // Only claim hit-testing over actual barcode regions so the
-        // ImageAnalysisOverlayView beneath us still receives events elsewhere.
+        // 仅对实际条码区域响应命中测试，
+        // 使下方的 ImageAnalysisOverlayView 在其他区域仍能接收事件。
         barcodes.contains { rectForObservation($0).contains(point) } ? self : nil
     }
 
@@ -312,8 +315,8 @@ final class BarcodeAnnotationView: NSView {
         rebuildTrackingAreas()
     }
 
-    /// Returns the barcode observation whose view-space rect contains `point`,
-    /// where `point` is in this view's coordinate space.
+    /// 返回视图空间矩形包含 `point` 的条码观测结果，
+    /// 其中 `point` 为该视图坐标系中的点。
     func barcode(at point: CGPoint) -> VNBarcodeObservation? {
         barcodes.first { rectForObservation($0).contains(point) }
     }
@@ -324,10 +327,10 @@ final class BarcodeAnnotationView: NSView {
         guard !barcodes.isEmpty, let ctx = NSGraphicsContext.current?.cgContext else { return }
         for obs in barcodes {
             let rect = rectForObservation(obs)
-            // Subtle fill
+            // 淡色填充
             ctx.setFillColor(NSColor.systemYellow.withAlphaComponent(0.12).cgColor)
             ctx.fill(rect)
-            // Border
+            // 边框
             ctx.setStrokeColor(NSColor.systemYellow.withAlphaComponent(0.9).cgColor)
             ctx.setLineWidth(2)
             ctx.stroke(rect)
@@ -370,10 +373,10 @@ final class BarcodeAnnotationView: NSView {
 
     // MARK: Coordinate conversion
 
-    /// Converts a `VNBarcodeObservation.boundingBox` (normalized, bottom-left origin)
-    /// to this view's coordinate space.
-    /// NSView is not flipped (origin at bottom-left, Y axis up), which matches
-    /// Vision's normalized coordinate system directly — no Y-flip needed.
+    /// 将 `VNBarcodeObservation.boundingBox`（归一化，左下角为原点）
+    /// 转换到本视图的坐标空间。
+    /// NSView 未翻转（原点在左下角，Y 轴向上），与
+    /// Vision 归一化坐标系一致，无需翻转 Y。
     private func rectForObservation(_ obs: VNBarcodeObservation) -> CGRect {
         let vb = obs.boundingBox
         let w = bounds.width

@@ -8,6 +8,7 @@
 import AppKit
 import Carbon
 
+/// 使用 Carbon Event Manager 注册全局热键，并在按键触发时回调主线程闭包。
 @MainActor
 final class GlobalHotKeyMonitor {
     private var hotKeyRef: EventHotKeyRef?
@@ -15,6 +16,11 @@ final class GlobalHotKeyMonitor {
     private let hotKeyID: EventHotKeyID
     private let onKeyDown: @MainActor () -> Void
 
+    /// - Parameters:
+    ///   - id: 热键唯一标识符（FourCharCode）。
+    ///   - keyCode: 虚拟键码（如 `kVK_ANSI_A`）。
+    ///   - modifiers: 修饰键掩码（如 `controlKey | cmdKey`）。
+    ///   - onKeyDown: 热键触发时在主线程调用的回调。
     init?(id: FourCharCode, keyCode: UInt32, modifiers: UInt32, onKeyDown: @escaping @MainActor () -> Void) {
         hotKeyID = EventHotKeyID(signature: OSType(id), id: UInt32(1))
         self.onKeyDown = onKeyDown
@@ -30,7 +36,7 @@ final class GlobalHotKeyMonitor {
         )
 
         guard handlerStatus == noErr else {
-            NSLog("Failed to install hot key handler: \(handlerStatus)")
+            NSLog("安装热键处理器失败：\(handlerStatus)")
             return nil
         }
 
@@ -44,7 +50,7 @@ final class GlobalHotKeyMonitor {
         )
 
         guard registerStatus == noErr else {
-            NSLog("Failed to register hot key: \(registerStatus)")
+            NSLog("注册热键失败：\(registerStatus)")
             if let eventHandlerRef {
                 RemoveEventHandler(eventHandlerRef)
                 self.eventHandlerRef = nil
@@ -88,8 +94,6 @@ final class GlobalHotKeyMonitor {
     private static let eventHandler: EventHandlerUPP = { _, event, userData in
         guard let userData else { return OSStatus(eventNotHandledErr) }
         let monitor = Unmanaged<GlobalHotKeyMonitor>.fromOpaque(userData).takeUnretainedValue()
-        // Carbon delivers kEventHotKeyPressed on the main thread via the run loop.
-        // assumeIsolated satisfies Swift's actor-isolation model without an extra hop.
         return MainActor.assumeIsolated {
             monitor.handleHotKeyEvent(event)
         }

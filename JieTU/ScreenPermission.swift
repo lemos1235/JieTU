@@ -8,19 +8,17 @@
 import AppKit
 import ScreenCaptureKit
 
+/// 检查并请求屏幕录制权限，权限缺失时引导用户前往系统设置开启。
 @MainActor
 enum ScreenPermission {
     static func requestIfNeeded() {
         Task {
             do {
-                // Attempting to get shareable content will trigger the permission prompt
-                // if the user hasn't granted screen recording access yet.
                 _ = try await SCShareableContent.excludingDesktopWindows(
                     false,
                     onScreenWindowsOnly: true
                 )
             } catch {
-                // Permission denied or not yet granted — open System Settings
                 showPermissionAlert()
             }
         }

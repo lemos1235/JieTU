@@ -9,13 +9,9 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - (SelectionOverlay removed — capture-first flow uses AdjustmentOverlayController directly)
+// MARK: - 调整蒙层
 
-// Placeholder to keep old call sites from compiling if any remain
-// (AppDelegate now calls AdjustmentOverlayController.show directly)
-
-// MARK: - Adjustment Overlay (single-stage: frozen screen + live adjustable selection + inline toolbar)
-
+/// 全屏截图蒙层面板，可接收键盘事件。
 final class SelectionOverlayPanel: NSPanel {
     override var canBecomeKey: Bool {
         true
@@ -26,6 +22,7 @@ final class SelectionOverlayPanel: NSPanel {
     }
 }
 
+/// 放大镜在某一时刻的截图数据。
 struct MagnifierSnapshot {
     let screenPoint: CGPoint
     let localPoint: CGPoint
@@ -33,6 +30,7 @@ struct MagnifierSnapshot {
     let croppedImage: CGImage
 }
 
+/// 承载放大镜视图的非激活浮动面板。
 final class OverlayMagnifierPanel: NSPanel {
     override var canBecomeKey: Bool {
         false
@@ -43,6 +41,7 @@ final class OverlayMagnifierPanel: NSPanel {
     }
 }
 
+/// 在截图蒙层上显示光标附近像素的放大预览，并展示颜色值。
 final class OverlayMagnifierView: NSView {
     static let panelSize = CGSize(width: 150, height: 110)
     private let magnifierInset: CGFloat = 8
@@ -196,6 +195,7 @@ final class OverlayToolbarHostingView<Content: View>: NSHostingView<Content> {
     }
 }
 
+/// 管理截图蒙层的生命周期：冻结屏幕、展示可调整选区、内嵌工具栏及放大镜。
 @MainActor
 final class AdjustmentOverlayController {
     static var active: AdjustmentOverlayController?
@@ -222,7 +222,7 @@ final class AdjustmentOverlayController {
         self.screen = screen
         self.fullImage = fullImage
 
-        // Full-screen frozen image panel
+        // 全屏冻结图像面板
         panel = SelectionOverlayPanel(
             contentRect: screen.frame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -237,7 +237,7 @@ final class AdjustmentOverlayController {
         panel.ignoresMouseEvents = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        // Floating toolbar panel (lives above the full-screen panel)
+        // 悬浮工具栏面板（层级高于全屏面板）
         toolbarPanel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 220, height: 44),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -284,8 +284,8 @@ final class AdjustmentOverlayController {
         adjustView.onDragBegan = { [weak self] in self?.toolbarPanel.orderOut(nil) }
         adjustView.onDragEnded = { [weak self] in
             self?.refreshToolbar()
-            // Defer one runloop so SwiftUI completes its first layout pass
-            // and fittingSize is accurate before we position the panel.
+            // 延迟一个 runloop，等 SwiftUI 完成首次布局后
+            // fittingSize 才准确，再定位面板。
             DispatchQueue.main.async {
                 self?.repositionToolbar()
                 self?.toolbarPanel.orderFront(nil)
@@ -303,7 +303,7 @@ final class AdjustmentOverlayController {
         panel.makeFirstResponder(adjustView)
         panel.invalidateCursorRects(for: adjustView)
         magnifierPanel.orderOut(nil)
-        // Only show toolbar if we already have a selection; otherwise user draws first
+        // 仅当已有选区时才显示工具栏；否则用户先绘制选区
         if adjustView.hasSelection {
             repositionToolbar()
             toolbarPanel.orderFront(nil)
@@ -342,7 +342,7 @@ final class AdjustmentOverlayController {
         let toolbarW = toolbarHosting.fittingSize.width
         let toolbarH = toolbarHosting.fittingSize.height
         let gap: CGFloat = 8
-        let x = screenOrigin.x + sel.maxX - toolbarW + 4 // compensate ToolbarView's 4pt shadow padding
+        let x = screenOrigin.x + sel.maxX - toolbarW + 4 // 补偿 ToolbarView 4pt 阴影内边距
         let y = screenOrigin.y + sel.minY - toolbarH - gap
         toolbarPanel.setFrame(
             CGRect(x: x, y: max(screenOrigin.y + 4, y), width: toolbarW, height: toolbarH),
@@ -440,7 +440,7 @@ final class AdjustmentOverlayController {
 
     private func performSave() {
         guard let img = cropCurrentSelection() else { return }
-        // Hide overlay panels so the screen unfreezes, but keep self alive
+        // 隐藏蒙层面板以解冻屏幕，但保持 self 存活
         magnifierPanel.orderOut(nil)
         toolbarPanel.orderOut(nil)
         panel.orderOut(nil)
@@ -480,6 +480,7 @@ final class AdjustmentOverlayController {
 
 // MARK: - AdjustmentOverlayView
 
+/// 全屏覆盖视图，负责绘制冻结背景、暗化遮罩、选区边框与控制点，并处理鼠标拖拽交互。
 final class AdjustmentOverlayView: NSView {
     var onCancel: (() -> Void)?
     var onDragBegan: (() -> Void)?
@@ -512,8 +513,8 @@ final class AdjustmentOverlayView: NSView {
             }
         }
 
-        /// Load nwse or nesw resize cursor from macOS system resources.
-        /// Falls back to arrow if the system cursor cannot be loaded.
+        /// 从 macOS 系统资源加载 nwse 或 nesw 缩放光标。
+        /// 若无法加载则回退为箭头光标。
         private static func diagonalCursor(nwse: Bool) -> NSCursor {
             let name = nwse ? "resizenorthwestsoutheast" : "resizenortheastsouthwest"
             let base =
@@ -545,10 +546,10 @@ final class AdjustmentOverlayView: NSView {
     }
 
     private var dragMode: DragMode = .none
-    /// True when no selection exists yet and user must draw the first one
+    /// 尚无选区，用户需要绘制第一个选区时为 true
     private var isAwaitingInitialDraw: Bool = false
 
-    /// Whether a valid selection has been drawn
+    /// 是否已绘制有效选区
     var hasSelection: Bool {
         !selectionRect.isEmpty
     }
@@ -559,7 +560,7 @@ final class AdjustmentOverlayView: NSView {
 
     override var isFlipped: Bool {
         false
-    } // bottom-left origin, same as NSScreen
+    } // 左下角为原点，与 NSScreen 一致
 
     override func acceptsFirstMouse(for _: NSEvent?) -> Bool {
         true
@@ -595,7 +596,7 @@ final class AdjustmentOverlayView: NSView {
             addCursorRect(bounds, cursor: .crosshair)
             return
         }
-        // Handles (take priority — added last so they win in overlap)
+        // 控制点（优先级最高 — 最后添加，在重叠时优先响应）
         for handle in Handle.allCases {
             let pt = point(for: handle)
             let r = CGRect(
@@ -634,11 +635,10 @@ final class AdjustmentOverlayView: NSView {
     override func draw(_: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
 
-        // 1. Draw full-screen background image
         fullImage.draw(in: bounds)
 
         if !selectionRect.isEmpty {
-            // 2. Dim everything outside selection (even-odd punch-out)
+            // 选区外区域变暗（奇偶规则镂空）
             let outer = NSBezierPath(rect: bounds)
             let inner = NSBezierPath(rect: selectionRect)
             outer.windingRule = .evenOdd
@@ -646,13 +646,11 @@ final class AdjustmentOverlayView: NSView {
             NSColor.black.withAlphaComponent(0.45).setFill()
             outer.fill()
 
-            // 3. White selection border
             NSColor.white.setStroke()
             let border = NSBezierPath(rect: selectionRect)
             border.lineWidth = 1.5
             border.stroke()
 
-            // 4. Draw 8 handles (always visible once a selection exists)
             for handle in Handle.allCases {
                 let pt = point(for: handle)
                 let dot = CGRect(
@@ -666,7 +664,6 @@ final class AdjustmentOverlayView: NSView {
                 ctx.strokeEllipse(in: dot)
             }
 
-            // 5. Pixel label
             let label = "\(Int(selectionRect.width)) × \(Int(selectionRect.height))"
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 11, weight: .medium),
@@ -844,7 +841,7 @@ final class AdjustmentOverlayView: NSView {
                 invalidateCursors()
                 applyCursor(at: convert(event.locationInWindow, from: nil))
                 notifyMagnifierChanged()
-                onDragEnded?() // triggers toolbar to appear
+                onDragEnded?() // 触发工具栏显示
             } else {
                 selectionRect = .zero
                 isAwaitingInitialDraw = true
@@ -867,7 +864,7 @@ final class AdjustmentOverlayView: NSView {
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 {
             onCancel?()
-        } // Escape
+        } // Escape 键
         else {
             super.keyDown(with: event)
         }
@@ -992,7 +989,6 @@ final class AdjustmentOverlayView: NSView {
             minY = startRect.minY + dy
         case .left: minX = startRect.minX + dx
         }
-        // Normalize so width/height are always positive
         let x = min(minX, maxX)
         let y = min(minY, maxY)
         let w = abs(maxX - minX)

@@ -4,16 +4,12 @@
 //
 //  Created by Alfred Jobs on 2026/3/21.
 //
-//  A floating toolbar panel that attaches below the active image surface.
-//  The toolbar contains: close, pin(optional), translate, save, copy.
-//
 
 import AppKit
 import Combine
 import SwiftUI
 
-// MARK: - Toolbar Panel
-
+/// 附着在截图选区下方的无边框悬浮面板。
 final class ToolbarPanel: NSPanel {
     init() {
         super.init(
@@ -36,8 +32,7 @@ final class ToolbarPanel: NSPanel {
     }
 }
 
-// MARK: - Toolbar state model
-
+/// 工具栏的动态状态，控制可选按钮的显隐。
 @MainActor
 final class ToolbarModel: ObservableObject {
     @Published var showPin: Bool
@@ -49,8 +44,7 @@ final class ToolbarModel: ObservableObject {
     }
 }
 
-// MARK: - SwiftUI Toolbar View
-
+/// 工具栏 SwiftUI 视图，包含关闭、固定、OCR、保存、复制按钮。
 struct ToolbarView: View {
     let onClose: () -> Void
     let onPin: (() -> Void)?
@@ -66,7 +60,6 @@ struct ToolbarView: View {
             }
             Divider().frame(height: 20).padding(.horizontal, 2)
 
-            // Only render the Pin button when a handler was provided.
             if model.showPin, let onPin {
                 toolbarButton(icon: "pin.fill", label: "固定", color: .primary) {
                     onPin()
@@ -94,9 +87,10 @@ struct ToolbarView: View {
                 .fill(.regularMaterial)
                 .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
         )
-        .padding(4) // so shadow isn't clipped
+        .padding(4) // 防止阴影被裁剪
     }
 
+    /// 统一样式的图标+标签按钮。
     private func toolbarButton(
         icon: String,
         label: String,

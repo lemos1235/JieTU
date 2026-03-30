@@ -55,8 +55,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ?? NSScreen.screens.first
     }
 
-    // MARK: - Actions
-
     @objc func startScreenshot() {
         guard screenshotTask == nil, AdjustmentOverlayController.active == nil else { return }
 

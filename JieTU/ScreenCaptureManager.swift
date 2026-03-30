@@ -9,6 +9,7 @@ import AppKit
 import ScreenCaptureKit
 import SwiftUI
 
+/// 以等比缩放方式显示截图的 SwiftUI 视图。
 struct CapturedImageView: View {
     let image: NSImage
 
@@ -19,6 +20,7 @@ struct CapturedImageView: View {
     }
 }
 
+/// 透传所有命中测试的 NSHostingView，使下方视图仍能响应鼠标事件。
 final class PassiveHostingView<Content: View>: NSHostingView<Content> {
     required init(rootView: Content) {
         super.init(rootView: rootView)
@@ -38,21 +40,20 @@ final class PassiveHostingView<Content: View>: NSHostingView<Content> {
 
 @MainActor
 enum ScreenCaptureManager {
+    /// 截图失败的错误类型。
     enum CaptureError: Error {
         case noDisplay
         case captureFailed
     }
 
-    /// Capture a region of the screen specified in global screen coordinates.
+    /// 截取全局屏幕坐标中指定区域的屏幕内容。
     static func capture(rect: CGRect, on screen: NSScreen) async throws -> NSImage {
         let content = try await SCShareableContent.excludingDesktopWindows(
             false, onScreenWindowsOnly: true
         )
 
-        // Find the SCDisplay that corresponds to the given NSScreen
         guard
             let display = content.displays.first(where: { scDisplay in
-                // SCDisplay.frame is in global screen coordinates (bottom-left origin)
                 scDisplay.frame.intersects(rect)
             })
         else {
@@ -64,11 +65,9 @@ enum ScreenCaptureManager {
         let config = SCStreamConfiguration()
         let scale = screen.backingScaleFactor
 
-        // sourceRect must be in display-local coordinates with top-left origin (Quartz image space),
-        // but rect and display.frame use macOS screen coordinates (bottom-left origin).
+        // sourceRect 使用显示器本地坐标且原点在左上角，需将屏幕坐标（左下角原点）转换过来。
         let displayOrigin = display.frame.origin
         let localX = rect.origin.x - displayOrigin.x
-        // Flip Y: screen coords have origin at bottom; sourceRect wants origin at top.
         let localY = display.frame.height - (rect.origin.y - displayOrigin.y) - rect.height
         let localRect = CGRect(x: localX, y: localY, width: rect.width, height: rect.height)
         config.sourceRect = localRect
@@ -87,7 +86,7 @@ enum ScreenCaptureManager {
         return NSImage(cgImage: cgImage, size: rect.size)
     }
 
-    /// Capture an entire screen (no sourceRect crop) at full Retina resolution.
+    /// 以完整 Retina 分辨率截取整个屏幕（不裁剪 sourceRect）。
     static func captureFullScreen(_ screen: NSScreen) async throws -> NSImage {
         let content = try await SCShareableContent.excludingDesktopWindows(
             false, onScreenWindowsOnly: true
@@ -95,7 +94,7 @@ enum ScreenCaptureManager {
         return try await captureFullScreen(screen, content: content)
     }
 
-    /// Same as above but accepts pre-fetched SCShareableContent to avoid redundant enumeration.
+    /// 同上，但接受预先获取的 SCShareableContent，避免重复枚举。
     static func captureFullScreen(_ screen: NSScreen, content: SCShareableContent) async throws -> NSImage {
         guard let display = content.displays.first(where: { $0.frame.intersects(screen.frame) })
         else {

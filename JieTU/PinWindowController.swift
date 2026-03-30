@@ -13,6 +13,7 @@ let kPinContentInset: CGFloat = 6
 
 let kGlowColor = NSColor(red: 0.29, green: 0.58, blue: 1.0, alpha: 1)
 
+/// 固定截图的无边框浮动面板，支持背景拖动并暴露拖动事件回调。
 final class PinWindow: NSPanel {
     var onDragBegan: (() -> Void)?
     var onDragEnded: (() -> Void)?
@@ -52,14 +53,13 @@ final class PinWindow: NSPanel {
     }
 }
 
+/// 管理单个固定截图窗口的控制器，负责创建窗口、保存图像、切换 OCR 模式。
 @MainActor
 final class PinWindowController: NSWindowController, NSWindowDelegate {
     private static var all: [PinWindowController] = []
 
     private let image: NSImage
     private let contentContainer: PinContentContainerView
-
-    // MARK: Factory
 
     static func create(image: NSImage, initialFrame: CGRect? = nil, showsOCR: Bool = false) {
         let ctrl = PinWindowController(
@@ -73,24 +73,22 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         ctrl.beginOCRAnalysisIfNeeded()
     }
 
-    // MARK: Init
-
     init(image: NSImage, initialFrame: CGRect? = nil, showsOCR: Bool = false) {
         self.image = image
 
         let windowFrame: CGRect
         if let initialFrame {
-            // Round to integer pixels first so NSWindow doesn't introduce sub-pixel drift
+            // 先取整到像素边界，防止 NSWindow 产生亚像素偏移
             let rounded = CGRect(
                 x: initialFrame.origin.x.rounded(),
                 y: initialFrame.origin.y.rounded(),
                 width: initialFrame.width.rounded(),
                 height: initialFrame.height.rounded()
             )
-            // Expand by kPinContentInset so the inner image view is exactly the selection size
+            // 向外扩展 kPinContentInset，使内部图像视图尺寸与选区完全一致
             windowFrame = rounded.insetBy(dx: -kPinContentInset, dy: -kPinContentInset)
         } else {
-            // Size pin window to image (max 60% of screen)
+            // 按图像大小调整固定窗口（最大为屏幕的 60%）
             let screen = NSScreen.main ?? NSScreen.screens[0]
             let maxSize = CGSize(
                 width: screen.visibleFrame.width * 0.6,
@@ -116,7 +114,7 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         let pinWindow = PinWindow(contentRect: windowFrame)
         pinWindow.contentAspectRatio = image.size
         if showsOCR {
-            // OCR mode: left-click is reserved for text selection; drag handled by OCRAnalysisContainerView
+            // OCR 模式：左键保留给文本选择；拖动由 OCRAnalysisContainerView 处理
             pinWindow.isMovableByWindowBackground = false
         }
         contentContainer = PinContentContainerView(image: image, showsOCR: showsOCR)
@@ -129,10 +127,6 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         contentContainer.wantsLayer = true
         if let layer = contentContainer.layer {
             layer.masksToBounds = false
-            // layer.shadowColor = kGlowColor.cgColor
-            // layer.shadowOpacity = 0.8
-            // layer.shadowOffset = .zero
-            // layer.shadowRadius = kPinContentInset
         }
         pinWindow.contentView = contentContainer
         pinWindow.delegate = self
@@ -143,13 +137,9 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         fatalError()
     }
 
-    // MARK: Window lifecycle
-
     func windowWillClose(_: Notification) {
         PinWindowController.all.removeAll { $0 === self }
     }
-
-    // MARK: - Actions
 
     private func closePin() {
         window?.close()
@@ -183,13 +173,14 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func enableOCR() {
-        // OCR mode is permanent for this window's lifetime — disable drag-to-move
-        // so the user can select text without accidentally repositioning the window.
+        // OCR 模式在窗口生命周期内永久生效 — 禁用背景拖动，
+        // 防止用户选择文本时意外移动窗口。
         window?.isMovableByWindowBackground = false
         contentContainer.switchToOCR()
     }
 }
 
+/// 固定窗口的内容容器，持有图像视图或 OCR 分析视图，并提供右键菜单。
 final class PinContentContainerView: NSView {
     var onCopy: (() -> Void)? {
         didSet { ocrContainerView?.onCopy = onCopy }
