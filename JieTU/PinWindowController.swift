@@ -129,10 +129,10 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         contentContainer.wantsLayer = true
         if let layer = contentContainer.layer {
             layer.masksToBounds = false
-            layer.shadowColor = kGlowColor.cgColor
-            layer.shadowOpacity = 0.8
-            layer.shadowOffset = .zero
-            layer.shadowRadius = kPinContentInset
+            // layer.shadowColor = kGlowColor.cgColor
+            // layer.shadowOpacity = 0.8
+            // layer.shadowOffset = .zero
+            // layer.shadowRadius = kPinContentInset
         }
         pinWindow.contentView = contentContainer
         pinWindow.delegate = self
