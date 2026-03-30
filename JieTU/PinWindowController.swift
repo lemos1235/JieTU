@@ -70,6 +70,7 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         all.append(ctrl)
         ctrl.showWindow(nil)
         ctrl.window?.orderFrontRegardless()
+        ctrl.playHighlightAnimation()
         ctrl.beginOCRAnalysisIfNeeded()
     }
 
@@ -113,6 +114,7 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         }
         let pinWindow = PinWindow(contentRect: windowFrame)
         pinWindow.contentAspectRatio = image.size
+        pinWindow.minSize = CGSize(width: 60, height: 60)
         if showsOCR {
             // OCR 模式：左键保留给文本选择；拖动由 OCRAnalysisContainerView 处理
             pinWindow.isMovableByWindowBackground = false
@@ -172,11 +174,18 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         contentContainer.beginOCRAnalysis()
     }
 
+    private func playHighlightAnimation() {
+        DispatchQueue.main.async { [weak self] in
+            self?.contentContainer.playNewPinHighlightAnimation()
+        }
+    }
+
     private func enableOCR() {
         // OCR 模式在窗口生命周期内永久生效 — 禁用背景拖动，
         // 防止用户选择文本时意外移动窗口。
         window?.isMovableByWindowBackground = false
         contentContainer.switchToOCR()
+        playHighlightAnimation()
     }
 }
 
@@ -201,6 +210,8 @@ final class PinContentContainerView: NSView {
     private var ocrContainerView: OCRAnalysisContainerView?
     private let storedImage: NSImage
     private var isOCRMode: Bool
+    private var highlightLayer: CAShapeLayer?
+    private var highlightCleanupWorkItem: DispatchWorkItem?
 
     init(image: NSImage, showsOCR: Bool) {
         storedImage = image
@@ -238,6 +249,7 @@ final class PinContentContainerView: NSView {
     override func layout() {
         super.layout()
         currentContentView.frame = bounds.insetBy(dx: contentInset, dy: contentInset)
+        updateHighlightPathIfNeeded()
     }
 
     override func menu(for _: NSEvent) -> NSMenu? {
@@ -306,5 +318,83 @@ final class PinContentContainerView: NSView {
 
     func beginOCRAnalysis() {
         ocrContainerView?.beginAnalysis()
+    }
+
+    func playNewPinHighlightAnimation() {
+        guard wantsLayer || layer != nil else { return }
+        layoutSubtreeIfNeeded()
+
+        highlightCleanupWorkItem?.cancel()
+        highlightLayer?.removeFromSuperlayer()
+
+        let layer = CAShapeLayer()
+        layer.frame = bounds
+        layer.path = highlightPath().cgPath
+        layer.fillColor = NSColor.clear.cgColor
+        layer.strokeColor = randomHighlightColor().cgColor
+        layer.lineWidth = 2
+        layer.lineCap = .round
+        layer.lineJoin = .round
+        layer.opacity = 0
+
+        let duration: CFTimeInterval = 1.2
+
+        layer.strokeStart = 0
+        layer.strokeEnd = 0
+        self.layer?.addSublayer(layer)
+        highlightLayer = layer
+
+        let strokeEndAnimation = CABasicAnimation(keyPath: "strokeEnd")
+        strokeEndAnimation.fromValue = 0
+        strokeEndAnimation.toValue = 1.0
+
+        let easeOut = CAMediaTimingFunction(name: .easeOut)
+        strokeEndAnimation.timingFunction = easeOut
+
+        let strokeStartAnimation = CABasicAnimation(keyPath: "strokeStart")
+        strokeStartAnimation.fromValue = 0
+        strokeStartAnimation.toValue = 0.7
+        strokeStartAnimation.beginTime = duration * 0.3
+        strokeStartAnimation.timingFunction = easeOut
+
+        let opacityAnimation = CAKeyframeAnimation(keyPath: "opacity")
+        opacityAnimation.values = [0, 1, 1, 0]
+        opacityAnimation.keyTimes = [0, 0.08, 0.86, 1]
+
+        let group = CAAnimationGroup()
+        group.animations = [strokeStartAnimation, strokeEndAnimation, opacityAnimation]
+        group.duration = duration
+        group.isRemovedOnCompletion = true
+        layer.add(group, forKey: "new-pin-highlight")
+
+        let cleanup = DispatchWorkItem { [weak self, weak layer] in
+            layer?.removeFromSuperlayer()
+            guard let self else { return }
+            if self.highlightLayer === layer {
+                self.highlightLayer = nil
+            }
+        }
+        highlightCleanupWorkItem = cleanup
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.05, execute: cleanup)
+    }
+
+    private func updateHighlightPathIfNeeded() {
+        highlightLayer?.frame = bounds
+        highlightLayer?.path = highlightPath().cgPath
+    }
+
+    private func highlightPath() -> NSBezierPath {
+        let outlineInset = max(2, contentInset * 0.5)
+        let rect = currentContentView.frame.insetBy(dx: -outlineInset, dy: -outlineInset)
+        return NSBezierPath(rect: rect)
+    }
+
+    private func randomHighlightColor() -> NSColor {
+        NSColor(
+            calibratedHue: CGFloat.random(in: 0..<1),
+            saturation: CGFloat.random(in: 0.72...0.92),
+            brightness: CGFloat.random(in: 0.9...1.0),
+            alpha: 1
+        )
     }
 }
