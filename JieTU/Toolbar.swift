@@ -13,7 +13,7 @@ import SwiftUI
 final class ToolbarPanel: NSPanel {
     init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 276, height: 44),
+            contentRect: NSRect(x: 0, y: 0, width: 220, height: 40),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -44,7 +44,7 @@ final class ToolbarModel: ObservableObject {
     }
 }
 
-/// 工具栏 SwiftUI 视图，包含关闭、固定、OCR、保存、复制按钮。
+/// 工具栏 SwiftUI 视图，仅图标，黑白高级风格。
 struct ToolbarView: View {
     let onClose: () -> Void
     let onPin: (() -> Void)?
@@ -53,71 +53,68 @@ struct ToolbarView: View {
     let onCopy: () -> Void
     @ObservedObject var model: ToolbarModel
 
+    @State private var hovered: String? = nil
+
     var body: some View {
-        HStack(spacing: 2) {
-            toolbarButton(icon: "xmark", label: "关闭", color: .red) {
-                onClose()
-            }
-            Divider().frame(height: 20).padding(.horizontal, 2)
+        HStack(spacing: 0) {
+            iconButton(id: "close", icon: "xmark", isDestructive: true, weight: .semibold, action: onClose)
 
             if model.showPin, let onPin {
-                toolbarButton(icon: "pin.fill", label: "固定", color: .primary) {
-                    onPin()
-                }
+                iconButton(id: "pin", icon: "pin.fill", action: onPin)
             }
 
             if model.showOCR, let onOCR {
-                toolbarButton(icon: "text.viewfinder", label: "OCR", color: .primary) {
-                    onOCR()
-                }
+                iconButton(id: "ocr", icon: "text.viewfinder", action: onOCR)
             }
 
-            Divider().frame(height: 20).padding(.horizontal, 2)
-            toolbarButton(icon: "square.and.arrow.down", label: "保存", color: .primary) {
-                onSave()
-            }
-            toolbarButton(icon: "doc.on.doc", label: "复制", color: .primary) {
-                onCopy()
-            }
+            iconButton(id: "save", icon: "arrow.down.to.line", action: onSave)
+            iconButton(id: "copy", icon: "doc.on.clipboard", action: onCopy)
         }
-        .padding(.horizontal, 10)
-        .frame(height: 44)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.regularMaterial)
-                .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
-        )
+        .padding(.horizontal, 2)
+        .frame(height: 30)
+        .background {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color(red: 0.196, green: 0.196, blue: 0.196, opacity: 0.82))
+        }
+        .shadow(color: .black.opacity(0.55), radius: 14, x: 0, y: 5)
         .padding(4) // 防止阴影被裁剪
     }
 
-    /// 统一样式的图标+标签按钮。
-    private func toolbarButton(
+    private var separator: some View {
+        Rectangle()
+            .fill(Color(white: 1, opacity: 0.09))
+            .frame(width: 0.5, height: 16)
+            .padding(.horizontal, 2)
+    }
+
+    private func iconButton(
+        id: String,
         icon: String,
-        label: String,
-        color: Color,
-        busy: Bool = false,
+        isDestructive: Bool = false,
+        weight: Font.Weight = .regular,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            VStack(spacing: 2) {
-                if busy {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                        .frame(width: 18, height: 18)
-                } else {
-                    Image(systemName: icon)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(color)
-                        .frame(width: 18, height: 18)
+        let isHovered = hovered == id
+        return Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: weight))
+                .foregroundStyle(foregroundColor(id: id, isDestructive: isDestructive, isHovered: isHovered))
+                .frame(width: 32, height: 28)
+                .background {
+                    if isHovered {
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(Color(white: 1, opacity: 0.11))
+                    }
                 }
-                Text(label)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 44, height: 36)
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(busy)
+        .onHover { hovered = $0 ? id : nil }
+    }
+
+    private func foregroundColor(id: String, isDestructive: Bool, isHovered: Bool) -> Color {
+        if isDestructive {
+            return isHovered ? Color(white: 1, opacity: 1.0) : Color(white: 1, opacity: 0.75)
+        }
+        return isHovered ? Color(white: 1, opacity: 1.0) : Color(white: 1, opacity: 0.85)
     }
 }

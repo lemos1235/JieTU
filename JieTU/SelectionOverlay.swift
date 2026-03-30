@@ -23,11 +23,49 @@ final class SelectionOverlayPanel: NSPanel {
 }
 
 /// 放大镜在某一时刻的截图数据。
+private extension CGImage {
+    /// 返回图像中心像素的颜色（sRGB）。
+    var centerColor: NSColor? {
+        let w = width, h = height
+        guard w > 0, h > 0 else { return nil }
+        var data = [UInt8](repeating: 0, count: 4)
+        guard let ctx = CGContext(
+            data: &data, width: 1, height: 1,
+            bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        ctx.draw(self, in: CGRect(x: -CGFloat(w) / 2 + 0.5, y: -CGFloat(h) / 2 + 0.5, width: CGFloat(w), height: CGFloat(h)))
+        let alpha = data[3]
+        guard alpha > 0 else { return .black }
+        let scale = 255.0 / CGFloat(alpha)
+        return NSColor(
+            srgbRed: min(1, CGFloat(data[0]) * scale / 255),
+            green: min(1, CGFloat(data[1]) * scale / 255),
+            blue: min(1, CGFloat(data[2]) * scale / 255),
+            alpha: 1
+        )
+    }
+}
+
 struct MagnifierSnapshot {
     let screenPoint: CGPoint
     let localPoint: CGPoint
     let overlaySize: CGSize
     let croppedImage: CGImage
+    let centerColor: NSColor
+}
+
+/// 放大镜视图的共享样式常量。
+enum MagnifierStyle {
+    /// 外层容器圆角半径。
+    static let cornerRadius: CGFloat = 3
+    /// 图像预览区域圆角半径（内圈）。
+    static let innerCornerRadius: CGFloat = 2
+    /// 边框与图像之间的内边距。
+    static let inset: CGFloat = 1.6
+    /// 外层容器填充与边框颜色。
+    static let borderColor = NSColor.black.withAlphaComponent(0.30)
 }
 
 /// 承载放大镜视图的非激活浮动面板。
@@ -43,9 +81,9 @@ final class OverlayMagnifierPanel: NSPanel {
 
 /// 在截图蒙层上显示光标附近像素的放大预览，并展示颜色值。
 final class OverlayMagnifierView: NSView {
-    static let panelSize = CGSize(width: 150, height: 110)
-    private let magnifierInset: CGFloat = 8
-    private let magnifierCornerRadius: CGFloat = 10
+    static let panelSize = CGSize(width: 150, height: 120)
+    private let magnifierInset = MagnifierStyle.inset
+    private let magnifierCornerRadius = MagnifierStyle.cornerRadius
 
     var snapshot: MagnifierSnapshot? {
         didSet { needsDisplay = true }
@@ -60,13 +98,12 @@ final class OverlayMagnifierView: NSView {
               let ctx = NSGraphicsContext.current?.cgContext
         else { return }
 
-        let headerHeight: CGFloat = 22
         let frame = bounds
         let contentRect = CGRect(
             x: frame.minX + magnifierInset,
             y: frame.minY + magnifierInset,
             width: frame.width - magnifierInset * 2,
-            height: frame.height - magnifierInset * 2 - headerHeight
+            height: frame.height - magnifierInset * 2
         )
         let previousInterpolation = NSGraphicsContext.current?.imageInterpolation
         let outerPath = NSBezierPath(
@@ -79,47 +116,16 @@ final class OverlayMagnifierView: NSView {
         shadow.shadowBlurRadius = 14
         shadow.shadowOffset = NSSize(width: 0, height: -4)
         shadow.set()
-        NSColor(calibratedWhite: 0.08, alpha: 0.92).setFill()
+        MagnifierStyle.borderColor.setFill()
         outerPath.fill()
         ctx.restoreGState()
 
         outerPath.lineWidth = 1
-        NSColor.white.withAlphaComponent(0.16).setStroke()
+        MagnifierStyle.borderColor.setStroke()
         outerPath.stroke()
 
-        let headerRect = CGRect(
-            x: frame.minX + 1,
-            y: frame.maxY - headerHeight - 1,
-            width: frame.width - 2,
-            height: headerHeight
-        )
-        NSColor.white.withAlphaComponent(0.08).setFill()
-        NSBezierPath(
-            roundedRect: headerRect,
-            xRadius: magnifierCornerRadius - 1,
-            yRadius: magnifierCornerRadius - 1
-        ).fill()
-
-        let labelAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .medium),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.88),
-        ]
-        let coords =
-            "\(Int(snapshot.localPoint.x)), \(Int(snapshot.overlaySize.height - snapshot.localPoint.y))"
-        (coords as NSString).draw(
-            at: CGPoint(x: headerRect.minX + 10, y: headerRect.minY + 5),
-            withAttributes: labelAttrs
-        )
-
-        let badge = "10×"
-        let badgeSize = (badge as NSString).size(withAttributes: labelAttrs)
-        (badge as NSString).draw(
-            at: CGPoint(x: headerRect.maxX - badgeSize.width - 10, y: headerRect.minY + 5),
-            withAttributes: labelAttrs
-        )
-
         ctx.saveGState()
-        NSBezierPath(roundedRect: contentRect, xRadius: 8, yRadius: 8).addClip()
+        NSBezierPath(roundedRect: contentRect, xRadius: MagnifierStyle.innerCornerRadius, yRadius: MagnifierStyle.innerCornerRadius).addClip()
         NSGraphicsContext.current?.imageInterpolation = .none
         NSImage(
             cgImage: snapshot.croppedImage,
@@ -152,8 +158,31 @@ final class OverlayMagnifierView: NSView {
         ctx.setFillColor(NSColor.systemRed.withAlphaComponent(0.95).cgColor)
         ctx.fillEllipse(in: centerDot)
 
-        NSColor.white.withAlphaComponent(0.12).setStroke()
-        NSBezierPath(roundedRect: contentRect, xRadius: 8, yRadius: 8).stroke()
+        ctx.restoreGState()
+
+        // 左下角 hex 颜色 badge
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0
+        snapshot.centerColor.getRed(&r, green: &g, blue: &b, alpha: nil)
+        let hex = String(format: "#%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
+        let badgeAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .medium),
+            .foregroundColor: NSColor.white,
+        ]
+        let textSize = (hex as NSString).size(withAttributes: badgeAttrs)
+        let badgePadding: CGFloat = 5
+        let badgeRect = CGRect(
+            x: contentRect.minX + 5,
+            y: contentRect.minY + 5,
+            width: textSize.width + badgePadding * 2,
+            height: textSize.height + badgePadding - 2
+        )
+        ctx.saveGState()
+        NSColor.black.withAlphaComponent(0.55).setFill()
+        NSBezierPath(roundedRect: badgeRect, xRadius: 4, yRadius: 4).fill()
+        (hex as NSString).draw(
+            at: CGPoint(x: badgeRect.minX + badgePadding, y: badgeRect.minY + (badgePadding - 2) / 2),
+            withAttributes: badgeAttrs
+        )
         ctx.restoreGState()
     }
 }
@@ -528,11 +557,53 @@ final class AdjustmentOverlayView: NSView {
         }
     }
 
+    private static let crosshairCursor: NSCursor = {
+        let size: CGFloat = 20
+        let lineLength: CGFloat = 8
+        let lineWidth: CGFloat = 1.2
+        let gapRadius: CGFloat = 4
+        let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            let cx = rect.midX, cy = rect.midY
+            NSColor.black.withAlphaComponent(0.5).setStroke()
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.4)
+            shadow.shadowBlurRadius = 2
+            shadow.shadowOffset = .zero
+            shadow.set()
+            let path = NSBezierPath()
+            path.lineWidth = lineWidth + 1.5
+            path.move(to: CGPoint(x: cx, y: cy + gapRadius))
+            path.line(to: CGPoint(x: cx, y: cy + gapRadius + lineLength))
+            path.move(to: CGPoint(x: cx, y: cy - gapRadius))
+            path.line(to: CGPoint(x: cx, y: cy - gapRadius - lineLength))
+            path.move(to: CGPoint(x: cx + gapRadius, y: cy))
+            path.line(to: CGPoint(x: cx + gapRadius + lineLength, y: cy))
+            path.move(to: CGPoint(x: cx - gapRadius, y: cy))
+            path.line(to: CGPoint(x: cx - gapRadius - lineLength, y: cy))
+            path.stroke()
+            NSColor.white.setStroke()
+            NSShadow().set()
+            let fg = NSBezierPath()
+            fg.lineWidth = lineWidth
+            fg.move(to: CGPoint(x: cx, y: cy + gapRadius))
+            fg.line(to: CGPoint(x: cx, y: cy + gapRadius + lineLength))
+            fg.move(to: CGPoint(x: cx, y: cy - gapRadius))
+            fg.line(to: CGPoint(x: cx, y: cy - gapRadius - lineLength))
+            fg.move(to: CGPoint(x: cx + gapRadius, y: cy))
+            fg.line(to: CGPoint(x: cx + gapRadius + lineLength, y: cy))
+            fg.move(to: CGPoint(x: cx - gapRadius, y: cy))
+            fg.line(to: CGPoint(x: cx - gapRadius - lineLength, y: cy))
+            fg.stroke()
+            return true
+        }
+        return NSCursor(image: image, hotSpot: NSPoint(x: size / 2, y: size / 2 - 1))
+    }()
+
     private let handleRadius: CGFloat = 5
     private let handleHitRadius: CGFloat = 10
     private let magnifierSize = CGSize(width: 150, height: 110)
-    private let magnifierInset: CGFloat = 8
-    private let magnifierCornerRadius: CGFloat = 10
+    private let magnifierInset = MagnifierStyle.inset
+    private let magnifierCornerRadius = MagnifierStyle.cornerRadius
     private let magnifierOffset = CGPoint(x: 18, y: -18)
     private let magnifierSampleSize = CGSize(width: 14, height: 10)
 
@@ -593,7 +664,7 @@ final class AdjustmentOverlayView: NSView {
 
     override func resetCursorRects() {
         guard !isAwaitingInitialDraw, !selectionRect.isEmpty else {
-            addCursorRect(bounds, cursor: .crosshair)
+            addCursorRect(bounds, cursor: AdjustmentOverlayView.crosshairCursor)
             return
         }
         // 控制点（优先级最高 — 最后添加，在重叠时优先响应）
@@ -923,7 +994,7 @@ final class AdjustmentOverlayView: NSView {
             return .arrow
         }
         if isAwaitingInitialDraw || selectionRect.isEmpty {
-            return .crosshair
+            return AdjustmentOverlayView.crosshairCursor
         }
         if let handle = hitTestResizeHandle(point) {
             return handle.cursor
@@ -952,11 +1023,13 @@ final class AdjustmentOverlayView: NSView {
               let fullCGImage,
               let croppedImage = magnifierCrop(around: pointerLocation, from: fullCGImage)
         else { return nil }
+        let centerColor = croppedImage.centerColor ?? .white
         return MagnifierSnapshot(
             screenPoint: screenPoint(for: pointerLocation),
             localPoint: pointerLocation,
             overlaySize: bounds.size,
-            croppedImage: croppedImage
+            croppedImage: croppedImage,
+            centerColor: centerColor
         )
     }
 
