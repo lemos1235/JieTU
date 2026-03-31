@@ -76,7 +76,7 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
     private var dragStartMouseScreen: CGPoint = .zero
     private var isDragging = false
 
-    init(image: NSImage, showsBorder: Bool = false) {
+    init(image: NSImage) {
         capturedImage = image
         imageSize = image.size
         hostingView = PassiveHostingView(

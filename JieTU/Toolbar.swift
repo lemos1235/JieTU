@@ -67,7 +67,7 @@ struct ToolbarView: View {
                 iconButton(id: "ocr", icon: "text.viewfinder", action: onOCR)
             }
 
-            iconButton(id: "save", icon: "arrow.down.to.line", action: onSave)
+            iconButton(id: "save", icon: "arrow.down.to.line", weight: .semibold, action: onSave)
             iconButton(id: "copy", icon: "doc.on.clipboard", action: onCopy)
         }
         .padding(.horizontal, 2)
@@ -76,8 +76,6 @@ struct ToolbarView: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(Color(red: 0.196, green: 0.196, blue: 0.196, opacity: 0.82))
         }
-        .shadow(color: .black.opacity(0.55), radius: 14, x: 0, y: 5)
-        .padding(4) // 防止阴影被裁剪
     }
 
     private var separator: some View {
@@ -94,27 +92,13 @@ struct ToolbarView: View {
         weight: Font.Weight = .regular,
         action: @escaping () -> Void
     ) -> some View {
-        let isHovered = hovered == id
-        return Button(action: action) {
+        Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: weight))
-                .foregroundStyle(foregroundColor(id: id, isDestructive: isDestructive, isHovered: isHovered))
+                .foregroundStyle(isDestructive ? Color(white: 1, opacity: 0.75) : Color(white: 1, opacity: 0.85))
                 .frame(width: 32, height: 28)
-                .background {
-                    if isHovered {
-                        RoundedRectangle(cornerRadius: 7)
-                            .fill(Color(white: 1, opacity: 0.11))
-                    }
-                }
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { hovered = $0 ? id : nil }
-    }
-
-    private func foregroundColor(id: String, isDestructive: Bool, isHovered: Bool) -> Color {
-        if isDestructive {
-            return isHovered ? Color(white: 1, opacity: 1.0) : Color(white: 1, opacity: 0.75)
-        }
-        return isHovered ? Color(white: 1, opacity: 1.0) : Color(white: 1, opacity: 0.85)
     }
 }

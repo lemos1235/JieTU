@@ -188,39 +188,9 @@ final class OverlayMagnifierView: NSView {
 }
 
 final class OverlayToolbarHostingView<Content: View>: NSHostingView<Content> {
-    private var trackingArea: NSTrackingArea?
-
-    override func updateTrackingAreas() {
-        if let trackingArea {
-            removeTrackingArea(trackingArea)
-        }
-        trackingArea = NSTrackingArea(
-            rect: .zero,
-            options: [
-                .activeAlways, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited, .cursorUpdate,
-            ],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(trackingArea!)
-        super.updateTrackingAreas()
-    }
-
     override func resetCursorRects() {
         discardCursorRects()
         addCursorRect(bounds, cursor: .arrow)
-    }
-
-    override func mouseEntered(with _: NSEvent) {
-        NSCursor.arrow.set()
-    }
-
-    override func mouseMoved(with _: NSEvent) {
-        NSCursor.arrow.set()
-    }
-
-    override func cursorUpdate(with _: NSEvent) {
-        NSCursor.arrow.set()
     }
 }
 

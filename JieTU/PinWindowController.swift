@@ -129,6 +129,10 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         contentContainer.wantsLayer = true
         if let layer = contentContainer.layer {
             layer.masksToBounds = false
+            layer.shadowColor = kGlowColor.cgColor
+            layer.shadowOpacity = 0.5
+            layer.shadowRadius = kPinContentInset / 2
+            layer.shadowOffset = .zero
         }
         pinWindow.contentView = contentContainer
         pinWindow.delegate = self
@@ -289,7 +293,7 @@ final class PinContentContainerView: NSView {
     func switchToOCR() {
         guard !isOCRMode else { return }
         isOCRMode = true
-        let ocrView = OCRAnalysisContainerView(image: storedImage, showsBorder: true)
+        let ocrView = OCRAnalysisContainerView(image: storedImage)
         ocrView.onCopy = onCopy
         ocrView.onSave = onSave
         ocrView.onClose = onClose
@@ -358,8 +362,9 @@ final class PinContentContainerView: NSView {
         strokeStartAnimation.timingFunction = easeOut
 
         let opacityAnimation = CAKeyframeAnimation(keyPath: "opacity")
-        opacityAnimation.values = [0, 1, 1, 0]
-        opacityAnimation.keyTimes = [0, 0.08, 0.86, 1]
+        opacityAnimation.values = [0, 0, 1, 1]
+        opacityAnimation.keyTimes = [0, 0.06, 0.08, 1]
+        opacityAnimation.fillMode = .forwards
 
         let group = CAAnimationGroup()
         group.animations = [strokeStartAnimation, strokeEndAnimation, opacityAnimation]
@@ -391,9 +396,9 @@ final class PinContentContainerView: NSView {
 
     private func randomHighlightColor() -> NSColor {
         NSColor(
-            calibratedHue: CGFloat.random(in: 0..<1),
-            saturation: CGFloat.random(in: 0.72...0.92),
-            brightness: CGFloat.random(in: 0.9...1.0),
+            calibratedHue: CGFloat.random(in: 0 ..< 1),
+            saturation: CGFloat.random(in: 0.72 ... 0.92),
+            brightness: CGFloat.random(in: 0.9 ... 1.0),
             alpha: 1
         )
     }
