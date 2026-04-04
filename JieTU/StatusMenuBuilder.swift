@@ -19,10 +19,16 @@ enum StatusMenuBuilder {
         )
         screenshotItem.target = delegate
         screenshotItem.keyEquivalentModifierMask = [.control, .command]
-        screenshotItem.image = NSImage(
-            systemSymbolName: "camera.viewfinder", accessibilityDescription: nil
-        )
         menu.addItem(screenshotItem)
+
+        let autoOCRItem = NSMenuItem(
+            title: "自动OCR",
+            action: #selector(AppDelegate.toggleAutoOCR),
+            keyEquivalent: ""
+        )
+        autoOCRItem.target = delegate
+        autoOCRItem.state = delegate.autoOCREnabled ? .on : .off
+        menu.addItem(autoOCRItem)
 
         menu.addItem(.separator())
 

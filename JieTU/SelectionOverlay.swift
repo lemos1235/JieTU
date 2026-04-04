@@ -205,21 +205,23 @@ final class AdjustmentOverlayController {
     private let adjustView: AdjustmentOverlayView
     private let screen: NSScreen
     private let fullImage: NSImage
+    private let autoOCR: Bool
     private var toolbarHosting: OverlayToolbarHostingView<ToolbarView>!
     private var toolbarModel: ToolbarModel!
     private let magnifierView: OverlayMagnifierView
 
-    static func show(fullImage: NSImage, initialRect: CGRect?, screen: NSScreen) {
+    static func show(fullImage: NSImage, initialRect: CGRect?, screen: NSScreen, autoOCR: Bool = false) {
         let ctrl = AdjustmentOverlayController(
-            fullImage: fullImage, initialRect: initialRect, screen: screen
+            fullImage: fullImage, initialRect: initialRect, screen: screen, autoOCR: autoOCR
         )
         active = ctrl
         ctrl.show()
     }
 
-    private init(fullImage: NSImage, initialRect: CGRect?, screen: NSScreen) {
+    private init(fullImage: NSImage, initialRect: CGRect?, screen: NSScreen, autoOCR: Bool = false) {
         self.screen = screen
         self.fullImage = fullImage
+        self.autoOCR = autoOCR
 
         // 全屏冻结图像面板
         panel = SelectionOverlayPanel(
@@ -282,12 +284,17 @@ final class AdjustmentOverlayController {
         adjustView.onCancel = { [weak self] in self?.cancel() }
         adjustView.onDragBegan = { [weak self] in self?.toolbarPanel.orderOut(nil) }
         adjustView.onDragEnded = { [weak self] in
-            self?.refreshToolbar()
-            // 延迟一个 runloop，等 SwiftUI 完成首次布局后
-            // fittingSize 才准确，再定位面板。
-            DispatchQueue.main.async {
-                self?.repositionToolbar()
-                self?.toolbarPanel.orderFront(nil)
+            if self?.autoOCR == true && self?.adjustView.hasSelection == true {
+                // 自动OCR模式：直接执行OCR，跳过工具栏
+                self?.performOCR()
+            } else {
+                self?.refreshToolbar()
+                // 延迟一个 runloop，等 SwiftUI 完成首次布局后
+                // fittingSize 才准确，再定位面板。
+                DispatchQueue.main.async { [weak self] in
+                    self?.repositionToolbar()
+                    self?.toolbarPanel.orderFront(nil)
+                }
             }
         }
         adjustView.onSelectionChanged = { [weak self] in self?.repositionToolbar() }
@@ -304,8 +311,13 @@ final class AdjustmentOverlayController {
         magnifierPanel.orderOut(nil)
         // 仅当已有选区时才显示工具栏；否则用户先绘制选区
         if adjustView.hasSelection {
-            repositionToolbar()
-            toolbarPanel.orderFront(nil)
+            if autoOCR {
+                // 自动OCR模式：直接执行OCR
+                performOCR()
+            } else {
+                repositionToolbar()
+                toolbarPanel.orderFront(nil)
+            }
         }
     }
 

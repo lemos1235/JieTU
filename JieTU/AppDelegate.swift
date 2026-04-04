@@ -8,11 +8,18 @@
 import AppKit
 import Carbon
 
+private let kAutoOCRKey = "jietu.autoOCREnabled"
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     private var screenshotHotKeyMonitor: GlobalHotKeyMonitor?
     private var screenshotTask: Task<Void, Never>?
+
+    var autoOCREnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: kAutoOCRKey) }
+        set { UserDefaults.standard.set(newValue, forKey: kAutoOCRKey) }
+    }
 
     func applicationDidFinishLaunching(_: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -36,6 +43,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func rebuildMenu() {
         statusItem.menu = StatusMenuBuilder.build(delegate: self)
+    }
+
+    @objc func toggleAutoOCR() {
+        autoOCREnabled.toggle()
+        rebuildMenu()
     }
 
     private func registerScreenshotHotKey() {
@@ -72,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                   let fullImage = try? await ScreenCaptureManager.captureFullScreen(screen)
             else { return }
             AdjustmentOverlayController.show(
-                fullImage: fullImage, initialRect: nil, screen: screen
+                fullImage: fullImage, initialRect: nil, screen: screen, autoOCR: self.autoOCREnabled
             )
         }
     }
