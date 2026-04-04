@@ -918,6 +918,9 @@ final class AdjustmentOverlayView: NSView {
         if event.keyCode == 53 {
             onCancel?()
         } // Escape 键
+        else if event.keyCode == 13 && event.modifierFlags.contains(.command) {
+            onCancel?()
+        } // Command+W
         else {
             super.keyDown(with: event)
         }

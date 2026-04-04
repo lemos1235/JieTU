@@ -28,6 +28,15 @@ final class PinWindow: NSPanel {
         onDragEnded?()
     }
 
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 13 && event.modifierFlags.contains(.command) {
+            close()
+        }  // Command+W
+        else {
+            super.keyDown(with: event)
+        }
+    }
+
     init(contentRect: NSRect) {
         super.init(
             contentRect: contentRect,
@@ -166,8 +175,8 @@ final class PinWindowController: NSWindowController, NSWindowDelegate {
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url, let self else { return }
             if let tiff = self.image.tiffRepresentation,
-               let bitmap = NSBitmapImageRep(data: tiff),
-               let png = bitmap.representation(using: .png, properties: [:])
+                let bitmap = NSBitmapImageRep(data: tiff),
+                let png = bitmap.representation(using: .png, properties: [:])
             {
                 try? png.write(to: url)
             }
@@ -260,7 +269,8 @@ final class PinContentContainerView: NSView {
         let menu = NSMenu()
 
         if !isOCRMode {
-            let ocrItem = NSMenuItem(title: "OCR识别", action: #selector(handleSwitchToOCR), keyEquivalent: "")
+            let ocrItem = NSMenuItem(
+                title: "OCR识别", action: #selector(handleSwitchToOCR), keyEquivalent: "")
             ocrItem.target = self
             menu.addItem(ocrItem)
             menu.addItem(.separator())
@@ -396,9 +406,9 @@ final class PinContentContainerView: NSView {
 
     private func randomHighlightColor() -> NSColor {
         NSColor(
-            calibratedHue: CGFloat.random(in: 0 ..< 1),
-            saturation: CGFloat.random(in: 0.72 ... 0.92),
-            brightness: CGFloat.random(in: 0.9 ... 1.0),
+            calibratedHue: CGFloat.random(in: 0..<1),
+            saturation: CGFloat.random(in: 0.72...0.92),
+            brightness: CGFloat.random(in: 0.9...1.0),
             alpha: 1
         )
     }
