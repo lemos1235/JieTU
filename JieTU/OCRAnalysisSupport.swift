@@ -100,8 +100,17 @@ final class OCRAnalysisContainerView: NSView, ImageAnalysisOverlayViewDelegate {
 
     func beginAnalysis() {
         OCRAnalysisService.analyze(image: capturedImage, overlay: analysisOverlay) { [weak self] barcodes in
-            self?.barcodeAnnotationView.update(barcodes: barcodes)
+            guard let self else { return }
+            barcodeAnnotationView.update(barcodes: barcodes)
+            highlightRecognizedText()
         }
+    }
+
+    private func highlightRecognizedText() {
+        let recognizedText = analysisOverlay.text
+        guard !recognizedText.isEmpty else { return }
+        analysisOverlay.selectedRanges = [recognizedText.startIndex..<recognizedText.endIndex]
+        analysisOverlay.setSupplementaryInterfaceHidden(true, animated: false)
     }
 
     override func layout() {
